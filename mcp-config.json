@@ -1,0 +1,144 @@
+{
+  "mcpServers": {
+    "local-tools": {
+      "name": "Local MCP Tools",
+      "url": "http://localhost:8000",
+      "tools": {
+        "format_check": {
+          "description": "Check code formatting",
+          "parameters": {
+            "path": {
+              "type": "string",
+              "description": "Path to check"
+            },
+            "language": {
+              "type": "string",
+              "description": "Programming language",
+              "enum": ["python", "javascript", "typescript", "go", "rust"]
+            }
+          }
+        },
+        "lint": {
+          "description": "Run code linting",
+          "parameters": {
+            "path": {
+              "type": "string",
+              "description": "Path to lint"
+            },
+            "config": {
+              "type": "string",
+              "description": "Linting configuration file"
+            }
+          }
+        },
+        "analyze": {
+          "description": "Run static code analysis",
+          "parameters": {
+            "path": {
+              "type": "string",
+              "description": "Path to analyze"
+            },
+            "depth": {
+              "type": "integer",
+              "description": "Analysis depth"
+            }
+          }
+        },
+        "consult_gemini": {
+          "description": "Get AI assistance from Gemini",
+          "parameters": {
+            "question": {
+              "type": "string",
+              "description": "Technical question or code to review"
+            },
+            "context": {
+              "type": "string",
+              "description": "Additional context"
+            }
+          }
+        },
+        "create_manim_animation": {
+          "description": "Create mathematical animations",
+          "parameters": {
+            "script": {
+              "type": "string",
+              "description": "Manim script content"
+            },
+            "output_format": {
+              "type": "string",
+              "enum": ["mp4", "gif", "webm"],
+              "default": "mp4"
+            }
+          }
+        },
+        "compile_latex": {
+          "description": "Compile LaTeX documents",
+          "parameters": {
+            "content": {
+              "type": "string",
+              "description": "LaTeX document content"
+            },
+            "format": {
+              "type": "string",
+              "enum": ["pdf", "dvi", "ps"],
+              "default": "pdf"
+            }
+          }
+        }
+      }
+    },
+    "comfyui": {
+      "name": "ComfyUI MCP Server",
+      "url": "http://localhost:8189",
+      "remote_url": "${COMFYUI_SERVER_URL}",
+      "tools": {
+        "generate_image": {
+          "description": "Generate images using ComfyUI workflows"
+        },
+        "list_workflows": {
+          "description": "List available ComfyUI workflows"
+        },
+        "execute_workflow": {
+          "description": "Execute a specific ComfyUI workflow"
+        }
+      }
+    },
+    "ai-toolkit": {
+      "name": "AI Toolkit MCP Server",
+      "url": "http://localhost:8190",
+      "remote_url": "${AI_TOOLKIT_SERVER_URL}",
+      "tools": {
+        "upload_dataset": {
+          "description": "Upload training dataset"
+        },
+        "create_training_config": {
+          "description": "Create LoRA training configuration"
+        },
+        "start_training": {
+          "description": "Start LoRA training job"
+        },
+        "check_training_status": {
+          "description": "Check training job status"
+        },
+        "list_models": {
+          "description": "List trained models"
+        }
+      }
+    }
+  },
+  "settings": {
+    "timeout": 30,
+    "max_retries": 3,
+    "log_level": "INFO",
+    "enable_caching": true,
+    "cache_ttl": 3600
+  },
+  "security": {
+    "require_auth": false,
+    "allowed_origins": ["*"],
+    "rate_limit": {
+      "enabled": true,
+      "requests_per_minute": 60
+    }
+  }
+}

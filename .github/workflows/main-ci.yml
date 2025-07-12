@@ -1,0 +1,519 @@
+name: Main CI
+# Comprehensive CI for main branch with all validation stages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_docker_push:
+        description: 'Skip pushing Docker images'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: main-ci-${{ github.sha }}
+  cancel-in-progress: false  # Don't cancel main branch builds
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Stage 1: Format check
+  format-check:
+    uses: ./.github/workflows/lint-stages.yml
+    with:
+      stage: format
+      upload_artifacts: true
+
+  # Stage 2: Basic linting
+  basic-lint:
+    needs: format-check
+    uses: ./.github/workflows/lint-stages.yml
+    with:
+      stage: basic
+      upload_artifacts: true
+
+  # Stage 3: Full analysis
+  full-lint:
+    needs: basic-lint
+    uses: ./.github/workflows/lint-stages.yml
+    with:
+      stage: full
+      upload_artifacts: true
+
+  # Stage 4: Test suite execution
+  test-suite:
+    name: Test Suite
+    needs: basic-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-asyncio pytest-timeout
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run tests with coverage
+        run: |
+          echo "🧪 Running test suite with coverage..."
+          pytest tests/ \
+            -v \
+            --cov=. \
+            --cov-report=xml \
+            --cov-report=term \
+            --cov-report=html \
+            --timeout=300 \
+            --junitxml=test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.run_id }}
+          path: |
+            test-results.xml
+            htmlcov/
+            coverage.xml
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: main-ci
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f test-results.xml ]; then
+            # Parse test results
+            python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('test-results.xml')
+          root = tree.getroot()
+          tests = int(root.attrib.get('tests', 0))
+          failures = int(root.attrib.get('failures', 0))
+          errors = int(root.attrib.get('errors', 0))
+          skipped = int(root.attrib.get('skipped', 0))
+          time = float(root.attrib.get('time', 0))
+          
+          print(f'| Metric | Value |')
+          print(f'|--------|-------|')
+          print(f'| Total Tests | {tests} |')
+          print(f'| Passed | {tests - failures - errors - skipped} |')
+          print(f'| Failed | {failures} |')
+          print(f'| Errors | {errors} |')
+          print(f'| Skipped | {skipped} |')
+          print(f'| Duration | {time:.2f}s |')
+          " >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Add coverage info if available
+          if [ -f coverage.xml ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Coverage Report" >> $GITHUB_STEP_SUMMARY
+            python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          line_rate = float(root.attrib.get('line-rate', 0)) * 100
+          branch_rate = float(root.attrib.get('branch-rate', 0)) * 100
+          
+          print(f'- Line Coverage: {line_rate:.1f}%')
+          print(f'- Branch Coverage: {branch_rate:.1f}%')
+          " >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Stage 5: MCP server validation
+  mcp-validation:
+    name: MCP Server Validation
+    needs: basic-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install MCP dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mcp pydantic aiofiles httpx
+
+      - name: Test MCP server
+        run: |
+          echo "🤖 Testing MCP server functionality..."
+          
+          # Test MCP server initialization
+          python3 -c "
+          import sys
+          sys.path.append('tools/mcp')
+          
+          # Test import
+          try:
+              from mcp_server import MCPServer
+              print('✅ MCP server module imported successfully')
+          except ImportError as e:
+              print(f'❌ Failed to import MCP server: {e}')
+              exit(1)
+          
+          # Test basic functionality
+          try:
+              server = MCPServer('.')
+              print('✅ MCP server initialized')
+              print(f'✅ Tools available: {len(server.tools)}')
+          except Exception as e:
+              print(f'❌ MCP server initialization failed: {e}')
+              exit(1)
+          "
+
+      - name: Test MCP HTTP bridge
+        if: always()
+        run: |
+          echo "🌐 Testing MCP HTTP bridge..."
+          
+          # Start the HTTP bridge in background
+          python scripts/mcp-http-bridge.py &
+          BRIDGE_PID=$!
+          
+          # Wait for it to start
+          sleep 5
+          
+          # Test the bridge
+          curl -s http://localhost:8000/health || echo "Health check failed"
+          
+          # Stop the bridge
+          kill $BRIDGE_PID || true
+
+  # Stage 6: Documentation build
+  docs-build:
+    name: Documentation Build
+    needs: basic-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Validate documentation
+        run: |
+          echo "📚 Validating documentation..."
+          
+          # Check for required documentation files
+          required_docs=(
+            "README.md"
+            "requirements.txt"
+          )
+          
+          for doc in "${required_docs[@]}"; do
+            if [ -f "$doc" ]; then
+              echo "✅ Found: $doc"
+            else
+              echo "❌ Missing: $doc"
+              exit 1
+            fi
+          done
+          
+          # Check markdown files for basic issues
+          find . -name "*.md" -type f | while read -r file; do
+            echo "Checking: $file"
+            # Check for broken relative links
+            grep -Eo '\[([^]]+)\]\(([^)]+)\)' "$file" | grep -v http | while read -r link; do
+              path=$(echo "$link" | sed -E 's/.*\]\(([^)]+)\).*/\1/')
+              if [[ ! -f "$path" && ! -d "$path" && "$path" != "#"* ]]; then
+                echo "  ⚠️  Possible broken link: $path"
+              fi
+            done
+          done
+
+  # Stage 7: Security scanning
+  security-scan:
+    name: Security Scanning
+    needs: basic-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install security tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety pip-audit
+
+      - name: Run Bandit security scan
+        run: |
+          echo "🔒 Running Bandit security scan..."
+          bandit -r . -f json -o bandit-report.json || true
+          
+          # Display summary
+          if [ -f bandit-report.json ]; then
+            python3 -c "
+          import json
+          with open('bandit-report.json') as f:
+              data = json.load(f)
+          metrics = data.get('metrics', {})
+          results = data.get('results', [])
+          
+          print('### Bandit Security Scan Results')
+          print(f\"Total issues: {len(results)}\")
+          for severity in ['HIGH', 'MEDIUM', 'LOW']:
+              count = sum(1 for r in results if r['issue_severity'] == severity)
+              if count > 0:
+                  print(f\"- {severity}: {count}\")
+          " >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check dependency vulnerabilities
+        run: |
+          echo "🔍 Checking dependency vulnerabilities..."
+          
+          # Run safety check
+          if [ -f requirements.txt ]; then
+            safety check --json --output safety-report.json || true
+            
+            if [ -f safety-report.json ] && [ -s safety-report.json ]; then
+              echo "### Dependency Vulnerabilities" >> $GITHUB_STEP_SUMMARY
+              python3 -c "
+          import json
+          with open('safety-report.json') as f:
+              vulns = json.load(f)
+          if vulns:
+              print(f'Found {len(vulns)} vulnerable dependencies')
+          else:
+              print('✅ No known vulnerabilities found')
+          " >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          # Run pip-audit
+          pip-audit --desc || true
+
+      - name: Upload security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-${{ github.run_id }}
+          path: |
+            bandit-report.json
+            safety-report.json
+          retention-days: 30
+
+  # Stage 8: Build and push Docker images
+  build-images:
+    name: Build Docker Images
+    needs: [format-check, basic-lint, full-lint, test-suite, mcp-validation]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        if: github.event.inputs.skip_docker_push != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push MCP image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/mcp.Dockerfile
+          push: ${{ github.event.inputs.skip_docker_push != 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push MCP HTTP Bridge image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/mcp-http-bridge.Dockerfile
+          push: ${{ github.event.inputs.skip_docker_push != 'true' }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp-http-bridge:main
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Stage 9: Integration tests
+  integration-tests:
+    name: Integration Tests
+    needs: build-images
+    if: success()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Compose
+        run: |
+          docker-compose version
+
+      - name: Run integration tests
+        run: |
+          echo "🧪 Running integration tests..."
+          
+          # Start services
+          docker-compose up -d
+          
+          # Wait for services to be ready
+          sleep 10
+          
+          # Check services are running
+          docker-compose ps
+          
+          # Run integration test suite if available
+          if [ -f "tests/integration_test.py" ]; then
+            docker-compose exec -T mcp-server pytest tests/integration_test.py -v
+          fi
+          
+          # Clean up
+          docker-compose down
+
+  # Stage 10: Deploy (placeholder)
+  deploy:
+    name: Deploy to Production
+    needs: [build-images, integration-tests, security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy application
+        run: |
+          echo "🚀 Deploying ${{ github.sha }} to production..."
+          echo "Note: Add actual deployment steps here"
+          echo ""
+          echo "Deployment checklist:"
+          echo "- [ ] Update production configuration"
+          echo "- [ ] Run database migrations"
+          echo "- [ ] Update container orchestration"
+          echo "- [ ] Verify health checks"
+          echo "- [ ] Monitor error rates"
+
+  # Final status notification
+  notify:
+    name: CI Summary
+    needs: [
+      format-check, basic-lint, full-lint, test-suite,
+      mcp-validation, docs-build, security-scan,
+      build-images, integration-tests, deploy
+    ]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate CI Summary
+        run: |
+          echo "# 📊 CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Format Check | ${{ needs.format-check.result == 'success' && '✅' || needs.format-check.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Basic Lint | ${{ needs.basic-lint.result == 'success' && '✅' || needs.basic-lint.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Full Lint | ${{ needs.full-lint.result == 'success' && '✅' || needs.full-lint.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Suite | ${{ needs.test-suite.result == 'success' && '✅' || needs.test-suite.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| MCP Validation | ${{ needs.mcp-validation.result == 'success' && '✅' || needs.mcp-validation.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Documentation | ${{ needs.docs-build.result == 'success' && '✅' || needs.docs-build.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security-scan.result == 'success' && '✅' || needs.security-scan.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Build | ${{ needs.build-images.result == 'success' && '✅' || needs.build-images.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration Tests | ${{ needs.integration-tests.result == 'success' && '✅' || needs.integration-tests.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy | ${{ needs.deploy.result == 'success' && '✅' || needs.deploy.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall status
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "## ❌ CI Pipeline Failed" >> $GITHUB_STEP_SUMMARY
+            echo "One or more stages failed. Please review the logs." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ✅ CI Pipeline Succeeded" >> $GITHUB_STEP_SUMMARY
+            echo "All stages completed successfully!" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Create issue on failure
+        if: failure() && github.ref == 'refs/heads/main'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const failed = [];
+            const needs = ${{ toJSON(needs) }};
+            
+            for (const [job, data] of Object.entries(needs)) {
+              if (data.result === 'failure') {
+                failed.push(job);
+              }
+            }
+            
+            if (failed.length > 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🚨 Main CI Failed: ${failed.join(', ')}`,
+                body: `## CI Failure Report
+                
+                **Commit**: ${context.sha}
+                **Run**: [#${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+                **Failed Jobs**: ${failed.join(', ')}
+                
+                Please investigate and fix the issues.`,
+                labels: ['ci-failure', 'automated']
+              });
+            }
