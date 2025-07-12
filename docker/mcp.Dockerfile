@@ -44,7 +44,9 @@ RUN mkdir -p /app/output /app/temp /app/logs
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPYCACHEPREFIX=/tmp/pycache
 ENV MCP_MODE=server
 
 # Default command
-CMD ["python", "-m", "tools.mcp.mcp-server"]
+CMD ["python", "-m", "tools.mcp.mcp_server"]

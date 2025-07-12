@@ -1,6 +1,14 @@
 # MCP Tools Documentation
 
-This document provides detailed information about the available MCP (Model Context Protocol) tools and how to use them.
+This document provides detailed information about the containerized MCP (Model Context Protocol) tools in this project.
+
+## Container-First Design
+
+All MCP tools run in Docker containers as part of this project's philosophy:
+- **Zero local dependencies** - just Docker
+- **Consistent execution** - same results on any Linux system
+- **Easy deployment** - works identically on self-hosted runners
+- **Single maintainer friendly** - no complex setup or coordination needed
 
 ## Table of Contents
 
@@ -20,7 +28,7 @@ MCP tools are functions that can be executed through the MCP server to perform v
 All tools can be executed via POST request to `/tools/execute`:
 
 ```bash
-curl -X POST http://localhost:8000/tools/execute \
+curl -X POST http://localhost:8005/tools/execute \
   -H "Content-Type: application/json" \
   -d '{
     "tool": "tool_name",
@@ -137,6 +145,35 @@ Get AI assistance from Google's Gemini model for technical questions, code revie
   "tokens_used": 245
 }
 ```
+
+### clear_gemini_history
+
+Clear Gemini's conversation history to ensure fresh responses without cached context.
+
+**Parameters:**
+- None
+
+**Example:**
+```python
+{
+  "tool": "clear_gemini_history",
+  "arguments": {}
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Cleared 5 conversation entries",
+  "cleared_entries": 5
+}
+```
+
+**Use Cases:**
+- Before PR reviews to ensure fresh analysis
+- When switching between different contexts
+- To reset after errors or incorrect responses
 
 ### Advanced Gemini Features
 
@@ -285,7 +322,7 @@ async def my_custom_tool(param1: str, param2: int = 10) -> Dict[str, Any]:
 
 2. **Register in MCP server:**
 ```python
-# tools/mcp/mcp-server.py
+# tools/mcp/mcp_server.py
 TOOLS = {
     # ... existing tools
     "my_custom_tool": custom_tools.my_custom_tool,

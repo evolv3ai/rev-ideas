@@ -34,13 +34,9 @@ jobs:
   # Runner health check
   runner-health-check:
     name: Runner Health Check
-    runs-on: ${{ matrix.runner }}
+    runs-on: self-hosted
     if: github.event.inputs.action == 'health-check' || github.event.inputs.action == 'full-maintenance' || github.event_name == 'schedule'
-    strategy:
-      matrix:
-        runner: [ubuntu-latest]
-        # Add self-hosted runners if available: [ubuntu-latest, self-hosted]
-    
+
     steps:
     - name: System Information
       run: |
@@ -255,12 +251,8 @@ jobs:
   # Container and cache cleanup
   runner-cleanup:
     name: Runner Cleanup
-    runs-on: ${{ matrix.runner }}
+    runs-on: self-hosted
     if: github.event.inputs.action == 'cleanup' || github.event.inputs.action == 'full-maintenance' || github.event_name == 'schedule'
-    strategy:
-      matrix:
-        runner: [ubuntu-latest]
-        # Add self-hosted runners if available
     
     steps:
     - name: Pre-cleanup Status
@@ -429,61 +421,63 @@ jobs:
   # Update container images
   update-images:
     name: Update Container Images
-    runs-on: ${{ matrix.runner }}
+    runs-on: self-hosted
     if: github.event.inputs.action == 'update-images' || github.event.inputs.action == 'full-maintenance'
-    strategy:
-      matrix:
-        runner: [ubuntu-latest]
-        # Add self-hosted runners if available
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Update Base Images
-      run: |
-        if command -v docker &> /dev/null; then
-          echo "📥 Updating Base Images"
-          echo "======================="
-          echo ""
-          
-          # Common base images
-          echo "Updating common base images..."
-          for image in ubuntu:22.04 python:3.11-slim alpine:latest; do
-            echo "Pulling $image..."
-            docker pull $image || echo "Failed to pull $image"
-          done
-          
-          echo "✅ Base images updated"
-        else
-          echo "⚠️ Docker not available"
-        fi
-        echo ""
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref }}
+          lfs: true
         
-    - name: Build Project Images
-      run: |
-        if command -v docker &> /dev/null && [ -f "docker-compose.yml" ]; then
-          echo "🔨 Building Project Images"
-          echo "========================"
+      - name: Update Base Images
+        run: |
+          if command -v docker &> /dev/null; then
+            echo "📥 Updating Base Images"
+            echo "======================="
+            echo ""
+            
+            # Common base images
+            echo "Updating common base images..."
+            for image in ubuntu:22.04 python:3.11-slim alpine:latest; do
+              echo "Pulling $image..."
+              docker pull $image || echo "Failed to pull $image"
+            done
+            
+            echo "✅ Base images updated"
+          else
+            echo "⚠️ Docker not available"
+          fi
           echo ""
           
-          echo "Building images defined in docker-compose.yml..."
-          docker-compose build --no-cache || echo "Some images failed to build"
-          
+      - name: Build Project Images
+        run: |
+          if command -v docker &> /dev/null && [ -f "docker-compose.yml" ]; then
+            echo "🔨 Building Project Images"
+            echo "========================"
+            echo ""
+            
+            echo "Building images defined in docker-compose.yml..."
+            docker-compose build --no-cache || echo "Some images failed to build"
+            
+            echo ""
+            echo "📋 Built images:"
+            docker-compose images || docker images | grep -i "${{ github.event.repository.name }}"
+            
+            echo "✅ Project images built"
+          else
+            echo "⚠️ Docker or docker-compose.yml not available"
+          fi
           echo ""
-          echo "📋 Built images:"
-          docker-compose images || docker images | grep -i "${{ github.event.repository.name }}"
-          
-          echo "✅ Project images built"
-        else
-          echo "⚠️ Docker or docker-compose.yml not available"
-        fi
-        echo ""
 
   # Generate maintenance summary
   maintenance-summary:
     name: Generate Maintenance Summary
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [runner-health-check, runner-cleanup, update-images]
     if: always() && (github.event.inputs.action == 'full-maintenance' || github.event_name == 'schedule')
     

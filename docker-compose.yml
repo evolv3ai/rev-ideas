@@ -7,6 +7,8 @@ services:
       context: .
       dockerfile: docker/mcp.Dockerfile
     container_name: mcp-server
+    ports:
+      - "8005:8000"
     volumes:
       - ./tools/mcp:/app/tools/mcp
       - ./mcp-config.json:/app/mcp-config.json
@@ -16,11 +18,12 @@ services:
     environment:
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
       - MCP_SERVER_NAME=mcp-server
     networks:
       - mcp-network
     restart: unless-stopped
-    command: python -m tools.mcp.mcp-server
+    command: python -m tools.mcp.mcp_server
 
   # ComfyUI MCP HTTP Bridge (for remote ComfyUI)
   mcp-comfyui-http:
@@ -79,6 +82,25 @@ services:
       - mcp-network
     profiles:
       - development
+
+  # CI/CD Python container
+  python-ci:
+    build:
+      context: .
+      dockerfile: docker/python-ci.Dockerfile
+    container_name: python-ci
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    environment:
+      - HOME=/tmp
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    networks:
+      - mcp-network
+    profiles:
+      - ci
 
 networks:
   mcp-network:

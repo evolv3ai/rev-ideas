@@ -1,0 +1,39 @@
+# Python CI/CD Image with all testing and linting tools
+FROM python:3.10-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python CI/CD tools
+RUN pip install --no-cache-dir \
+    black \
+    isort \
+    flake8 \
+    pylint \
+    mypy \
+    bandit \
+    safety \
+    pytest \
+    pytest-asyncio \
+    pytest-cov \
+    yamllint
+
+# Create working directory
+WORKDIR /workspace
+
+# Python environment configuration to prevent cache issues
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPYCACHEPREFIX=/tmp/pycache \
+    PYTEST_CACHE_DISABLE=1 \
+    PYTHONUTF8=1
+
+# Create a non-root user that will be overridden by docker-compose
+RUN useradd -m -u 1000 ciuser
+
+# Default command
+CMD ["bash"]
