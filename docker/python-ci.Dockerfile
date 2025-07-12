@@ -8,22 +8,14 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python CI/CD tools
-RUN pip install --no-cache-dir \
-    black \
-    isort \
-    flake8 \
-    pylint \
-    mypy \
-    bandit \
-    safety \
-    pytest \
-    pytest-asyncio \
-    pytest-cov \
-    yamllint
-
 # Create working directory
 WORKDIR /workspace
+
+# Copy requirements first to leverage Docker layer caching
+COPY requirements.txt ./
+
+# Install all dependencies from the requirements file
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Python environment configuration to prevent cache issues
 ENV PYTHONUNBUFFERED=1 \
