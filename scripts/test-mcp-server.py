@@ -14,13 +14,11 @@ import requests
 class MCPServerTester:
     """Test harness for MCP Server"""
 
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: str = "http://localhost:8005"):
         self.base_url = base_url
         self.results = {"passed": 0, "failed": 0, "errors": []}
 
-    def test_endpoint(
-        self, method: str, path: str, data: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
+    def test_endpoint(self, method: str, path: str, data: Dict[str, Any] = None) -> Dict[str, Any]:
         """Test an endpoint"""
         url = f"{self.base_url}{path}"
 
@@ -51,9 +49,7 @@ class MCPServerTester:
             self.results["errors"].append(
                 {
                     "test": test_name,
-                    "error": result.get(
-                        "error", f"Status code: {result['status_code']}"
-                    ),
+                    "error": result.get("error", f"Status code: {result['status_code']}"),
                 }
             )
 
@@ -95,9 +91,7 @@ class MCPServerTester:
 
         # Test 5: Lint tool
         print("\n5. Testing lint tool...")
-        result = self.test_endpoint(
-            "POST", "/tools/execute", {"tool": "lint", "arguments": {"path": "."}}
-        )
+        result = self.test_endpoint("POST", "/tools/execute", {"tool": "lint", "arguments": {"path": "."}})
         self.print_test_result("Lint tool", result)
 
         # Test 6: LaTeX compilation
@@ -145,13 +139,9 @@ class TestScene(Scene):
 
         # Test 8: Invalid tool
         print("\n8. Testing error handling...")
-        result = self.test_endpoint(
-            "POST", "/tools/execute", {"tool": "invalid_tool", "arguments": {}}
-        )
+        result = self.test_endpoint("POST", "/tools/execute", {"tool": "invalid_tool", "arguments": {}})
         expected_fail = result["status_code"] == 404
-        self.print_test_result(
-            "Error handling (expected failure)", {"success": expected_fail}
-        )
+        self.print_test_result("Error handling (expected failure)", {"success": expected_fail})
 
         # Print summary
         print("\n" + "=" * 50)
@@ -170,7 +160,7 @@ class TestScene(Scene):
 def main():
     """Main test function"""
     # Check if server URL is provided
-    server_url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
+    server_url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8005"
 
     # Wait for server to be ready
     print(f"🔄 Waiting for MCP server at {server_url}...")
