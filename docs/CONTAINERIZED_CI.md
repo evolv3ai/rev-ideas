@@ -25,11 +25,13 @@ This project embraces a **container-first approach** as a core design principle:
 
 The Python CI container (`docker/python-ci.Dockerfile`) includes all necessary tools:
 
+- **Base Image**: Python 3.11-slim for optimal performance
 - **Formatters**: Black, isort
 - **Linters**: flake8, pylint, mypy
-- **Testing**: pytest, pytest-cov, pytest-asyncio
+- **Testing**: pytest, pytest-cov, pytest-asyncio, pytest-mock
 - **Security**: bandit, safety
 - **Utilities**: yamllint, pre-commit
+- **Coverage**: XML and terminal coverage reports
 
 ### Docker Compose Services
 
@@ -73,6 +75,13 @@ The `run-ci.sh` script provides a simple interface:
 
 # Auto-formatting
 ./scripts/run-ci.sh autoformat
+
+# Full CI pipeline (all checks)
+./scripts/run-ci.sh full
+
+# YAML/JSON validation
+./scripts/run-ci.sh yaml-lint
+./scripts/run-ci.sh json-lint
 ```
 
 ### Direct Docker Compose Commands
@@ -97,10 +106,9 @@ To prevent permission issues with Python cache files:
 1. **Environment Variables**:
    - `PYTHONDONTWRITEBYTECODE=1` - Prevents .pyc file creation
    - `PYTHONPYCACHEPREFIX=/tmp/pycache` - Redirects cache to temp directory
-   - `PYTEST_CACHE_DISABLE=1` - Disables pytest cache
 
 2. **Configuration Files**:
-   - `pytest.ini` includes `-p no:cacheprovider`
+   - `pytest.ini` includes `-p no:cacheprovider` to disable pytest cache
 
 3. **Container User Permissions**:
    - Containers run as current user (USER_ID:GROUP_ID)
@@ -114,6 +122,10 @@ GitHub Actions workflows use the containerized approach:
 - name: Run Python Linting
   run: |
     ./scripts/run-ci.sh lint-basic
+
+- name: Run Tests with Coverage
+  run: |
+    ./scripts/run-ci.sh test
 ```
 
 This ensures:
@@ -121,6 +133,7 @@ This ensures:
 - Consistent behavior between local and CI environments
 - No need to install Python dependencies on runners
 - Faster execution with cached Docker images
+- Python 3.11 environment matches production
 
 ## Adding New Tools
 
@@ -193,6 +206,7 @@ docker image prune -f
 - **Gemini CLI**: Needs to potentially invoke Docker (would require Docker-in-Docker)
 - **Docker Compose**: Obviously needs to run on the host
 - **GitHub Actions runner**: Needs system-level access
+- **Git operations**: Need access to host git configuration
 
 ## Benefits
 
@@ -206,9 +220,11 @@ docker image prune -f
 
 1. Always use helper scripts for common operations
 2. Keep containers lightweight - only install necessary tools
-3. Use specific versions in Dockerfile for reproducibility
+3. Use specific versions in Dockerfile for reproducibility (e.g., Python 3.11)
 4. Leverage Docker layer caching on self-hosted runners
 5. Design for single-maintainer efficiency
+6. Run containers with user permissions to avoid file ownership issues
+7. Use multi-stage builds when appropriate for smaller final images
 
 ## Philosophy in Practice
 
