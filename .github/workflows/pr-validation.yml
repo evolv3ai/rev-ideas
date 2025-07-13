@@ -75,7 +75,7 @@ jobs:
           # Count different types of changes
           python_count=$(grep -E '\.(py)$' changed_files.txt | wc -l || echo "0")
           yaml_count=$(grep -E '\.(ya?ml|json)$' changed_files.txt | wc -l || echo "0")
-          docker_count=$(grep -E '(Dockerfile|docker-compose|\.dockerignore)' changed_files.txt | wc -l || echo "0")
+          docker_count=$(grep -E '(Dockerfile|docker-compose\.yml|docker-compose\.yaml|\.dockerignore)' changed_files.txt | wc -l || echo "0")
           mcp_count=$(grep -E '(mcp|MCP|tools/)' changed_files.txt | wc -l || echo "0")
           docs_count=$(grep -E '\.(md|rst|txt)$' changed_files.txt | wc -l || echo "0")
           total_files=$(cat changed_files.txt | wc -l)
@@ -157,19 +157,27 @@ jobs:
             echo "Found PROJECT_CONTEXT.md - Gemini will have full project context"
           fi
 
+      - name: Start MCP server for Gemini history clear
+        continue-on-error: true
+        uses: ./.github/actions/docker-compose-health-check
+        with:
+          services: 'mcp-server'
+          health-endpoint: 'http://localhost:8005/health'
+          timeout: '30'
+          build: 'true'
+
       - name: Clear Gemini conversation history
         continue-on-error: true
         run: |
           echo "🧹 Clearing Gemini conversation history..."
-          # Start MCP server if not running
-          docker-compose up -d mcp-server
-          sleep 5
-
           # Call the clear history endpoint via MCP server
           curl -X POST http://localhost:8005/tools/execute \
             -H "Content-Type: application/json" \
             -d '{"tool": "clear_gemini_history", "arguments": {}}' \
             || echo "Warning: Could not clear Gemini history"
+
+          # Stop the server after clearing history
+          docker-compose down
 
       - name: Run Gemini review
         continue-on-error: true  # Don't fail the PR if Gemini review fails
@@ -400,16 +408,13 @@ jobs:
 
       # No need to install Python or dependencies - Docker handles it
 
-      - name: Start MCP server with Docker Compose
-        run: |
-          echo "🚀 Starting MCP server with Docker Compose..."
-          docker-compose up -d mcp-server
-
-          # Wait for server to be ready
-          echo "⏳ Waiting for server to be healthy..."
-          timeout 60 bash -c 'until curl -s http://localhost:8005/health > /dev/null 2>&1; do echo -n "."; sleep 1; done'
-          echo ""
-          echo "✅ MCP server is ready!"
+      - name: Start MCP server with health check
+        uses: ./.github/actions/docker-compose-health-check
+        with:
+          services: 'mcp-server'
+          health-endpoint: 'http://localhost:8005/health'
+          timeout: '60'
+          build: 'true'
 
       - name: Test MCP server functionality
         run: |
@@ -433,12 +438,14 @@ jobs:
   # Stage 7: Docker image validation
   docker-validation:
     name: Docker Image Validation
-    needs: [detect-changes, gemini-review]
+    needs: [detect-changes, gemini-review, format-check, basic-lint, full-lint]
     if: |
       needs.detect-changes.outputs.docker_changed == 'true' ||
-      github.event.inputs.force_docker_validation
+      needs.detect-changes.outputs.python_changed == 'true' ||
+      github.event.inputs.force_docker_validation ||
+      !github.event.pull_request.draft
     runs-on: self-hosted
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       # No pre-checkout cleanup needed - actions/checkout with clean: true handles this
 
@@ -454,37 +461,62 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Validate Docker builds
-        run: |
-          echo "🐳 Validating Docker image builds..."
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=pr
+            type=sha,prefix=pr-${{ github.event.pull_request.number }}-
 
-          # Test main MCP Dockerfile
-          if [ -f "docker/mcp.Dockerfile" ]; then
-            echo "Building MCP image..."
-            docker build -f docker/mcp.Dockerfile -t mcp-test:${{ github.run_id }} .
-          fi
+      # Note: Docker builds intentionally do not use GitHub Actions cache (cache-from/cache-to)
+      # to avoid cache service availability issues. The self-hosted runner's local Docker
+      # cache provides sufficient caching for our needs.
+      - name: Build MCP image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/mcp.Dockerfile
+          push: false
+          tags: |
+            ${{ env.REGISTRY }}/andrewaltimit/template-repo:pr-${{ github.event.pull_request.number }}-mcp
+            ${{ env.REGISTRY }}/andrewaltimit/template-repo:pr-${{ github.event.pull_request.number }}-mcp-${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
 
-          # Test MCP HTTP bridge Dockerfile
-          if [ -f "docker/mcp-http-bridge.Dockerfile" ]; then
-            echo "Building MCP HTTP bridge image..."
-            docker build -f docker/mcp-http-bridge.Dockerfile -t mcp-http-bridge-test:${{ github.run_id }} .
-          fi
+      - name: Build MCP HTTP Bridge image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/mcp-http-bridge.Dockerfile
+          push: false
+          tags: |
+            ${{ env.REGISTRY }}/andrewaltimit/template-repo:pr-${{ github.event.pull_request.number }}-mcp-http-bridge
+            ${{ env.REGISTRY }}/andrewaltimit/template-repo:pr-${{ github.event.pull_request.number }}-mcp-http-bridge-${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
 
-          echo "✅ Docker image validation passed"
+      - name: Build Python CI image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/python-ci.Dockerfile
+          push: false
+          tags: |
+            ${{ env.REGISTRY }}/andrewaltimit/template-repo:pr-${{ github.event.pull_request.number }}-python-ci
+            ${{ env.REGISTRY }}/andrewaltimit/template-repo:pr-${{ github.event.pull_request.number }}-python-ci-${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Test Docker Compose
-        run: |
-          echo "🐳 Validating docker-compose configuration..."
-          docker-compose config
+      - name: Test Docker Compose with health check
+        uses: ./.github/actions/docker-compose-health-check
+        with:
+          services: ''  # all services
+          health-endpoint: 'http://localhost:8005/health'
+          timeout: '60'
+          build: 'true'
 
-          echo "🐳 Testing service startup..."
-          docker-compose up -d
-          sleep 10
-          docker-compose ps
-          docker-compose logs
-          docker-compose down
-
-          echo "✅ Docker Compose validation passed"
+      - name: Stop services
+        if: always()
+        run: docker-compose down
 
   # Final status and summary
   pr-status:
