@@ -294,6 +294,10 @@ Compile LaTeX documents to various formats.
 
 Access ComfyUI workflows for image generation.
 
+**Setup Instructions:**
+
+For detailed setup instructions, see the [ComfyUI MCP Server Setup Guide](https://gist.github.com/AndrewAltimit/f2a21b1a075cc8c9a151483f89e0f11e).
+
 **Available Tools:**
 
 - `generate_image`: Generate images using workflows
@@ -309,6 +313,10 @@ COMFYUI_SERVER_URL=http://192.168.0.152:8189
 ### AI Toolkit Integration
 
 Train LoRA models using AI Toolkit.
+
+**Setup Instructions:**
+
+For detailed setup instructions, see the [AI Toolkit MCP Server Setup Guide](https://gist.github.com/AndrewAltimit/2703c551eb5737de5a4c6767d3626cb8).
 
 **Available Tools:**
 
