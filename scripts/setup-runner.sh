@@ -196,8 +196,11 @@ setup_mcp_environment() {
     mkdir -p "$HOME/.mcp/configs"
 
     # Copy configurations if available
-    if [ -f "../mcp-config.json" ]; then
-        cp ../mcp-config.json "$HOME/.mcp/configs/"
+    if [ -f "../.mcp.json" ]; then
+        cp ../.mcp.json "$HOME/.mcp/configs/"
+        echo "✅ Copied MCP configuration"
+    elif [ -f ".mcp.json" ]; then
+        cp .mcp.json "$HOME/.mcp/configs/"
         echo "✅ Copied MCP configuration"
     fi
 
