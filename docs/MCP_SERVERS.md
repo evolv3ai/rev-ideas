@@ -1,71 +1,140 @@
 # MCP Servers Documentation
 
-This project uses multiple Model Context Protocol (MCP) servers to provide various development tools while maintaining the container-first philosophy.
+This project uses a modular architecture with multiple Model Context Protocol (MCP) servers, each specialized for specific functionality.
 
 ## Architecture Overview
 
-The MCP functionality is split across two servers:
+The MCP functionality is split across four modular servers:
 
-1. **Main MCP Server** - Containerized, runs all tools that don't require host access
-2. **Gemini MCP Server** - Host-only, provides Gemini AI integration
+1. **Code Quality MCP Server** (Port 8010) - Containerized, provides code formatting and linting tools
+2. **Content Creation MCP Server** (Port 8011) - Containerized, provides Manim animations and LaTeX compilation
+3. **Gaea2 MCP Server** (Port 8007) - Containerized, provides terrain generation and workflow management
+4. **Gemini MCP Server** (Port 8006) - Host-only, provides Gemini AI integration (requires Docker access)
 
-This separation ensures that most tools benefit from containerization while tools requiring Docker access (like Gemini CLI) can still function properly.
+This modular architecture ensures better separation of concerns, easier maintenance, and the ability to scale individual services independently.
 
-## Main MCP Server (Port 8005)
+## Code Quality MCP Server (Port 8010)
 
-The main MCP server runs in a Docker container and provides code quality and content creation tools.
+The code quality server provides formatting and linting tools for multiple programming languages.
 
 ### Starting the Server
 
 ```bash
-# Start via Docker Compose (recommended)
-docker-compose up -d mcp-server
+# Start via Docker Compose (recommended for container-first approach)
+docker-compose up -d mcp-code-quality
+
+# Or run locally for development
+python -m tools.mcp.code_quality.server
 
 # View logs
-docker-compose logs -f mcp-server
+docker-compose logs -f mcp-code-quality
 
 # Test health
-curl http://localhost:8005/health
+curl http://localhost:8010/health
 ```
 
 ### Available Tools
 
-#### Code Quality Tools
 - **format_check** - Check code formatting for Python, JavaScript, TypeScript, Go, and Rust
 - **lint** - Run static code analysis with configurable linting rules
+- **autoformat** - Automatically format code files
 
-#### Content Creation Tools
-- **create_manim_animation** - Create mathematical and technical animations using Manim
-- **compile_latex** - Compile LaTeX documents to PDF, DVI, or PostScript formats
+### Configuration
 
-### API Endpoints
+See `tools/mcp/code_quality/docs/README.md` for detailed configuration options.
 
-- `GET /` - Server information and available tools
-- `GET /health` - Health check endpoint
-- `POST /tools/execute` - Execute a specific tool
-- `GET /tools` - List all available tools with descriptions
+## Content Creation MCP Server (Port 8011)
 
-## Gemini MCP Server (Port 8006)
-
-The Gemini MCP server provides AI assistance through the Gemini CLI. It **must run on the host system** because the Gemini CLI requires Docker access.
-
-### Container Detection
-
-The server includes automatic container detection and will immediately exit with an error message if someone attempts to run it in a container:
-
-```bash
-# This will fail with a helpful error message
-docker-compose run gemini-mcp-server
-```
+The content creation server provides tools for creating animations and compiling documents.
 
 ### Starting the Server
 
 ```bash
-# Must run on host system
-python3 tools/mcp/gemini_mcp_server.py
+# Start via Docker Compose (recommended for container-first approach)
+docker-compose up -d mcp-content-creation
+
+# Or run locally for development
+python -m tools.mcp.content_creation.server
+
+# View logs
+docker-compose logs -f mcp-content-creation
+
+# Test health
+curl http://localhost:8011/health
+```
+
+### Available Tools
+
+- **create_manim_animation** - Create mathematical and technical animations using Manim
+- **compile_latex** - Compile LaTeX documents to PDF, DVI, or PostScript formats
+- **render_tikz** - Render TikZ diagrams as standalone images
+
+### Configuration
+
+Output directory is configured via the `MCP_OUTPUT_DIR` environment variable (defaults to `/tmp/mcp-content-output` in container).
+
+See `tools/mcp/content_creation/docs/README.md` for detailed documentation.
+
+## Gaea2 MCP Server (Port 8007)
+
+The Gaea2 server provides comprehensive terrain generation capabilities with support for all 185 documented Gaea2 nodes.
+
+### Starting the Server
+
+```bash
+# Start via Docker Compose (recommended for container-first approach)
+docker-compose up -d mcp-gaea2
+
+# Or run locally for development
+python -m tools.mcp.gaea2.server
+
+# For remote server deployment (e.g., on Windows with Gaea2 installed)
+# Set GAEA2_REMOTE_URL environment variable to point to the remote server
+export GAEA2_REMOTE_URL=http://remote-server:8007
+
+# View logs
+docker-compose logs -f mcp-gaea2
+
+# Test health
+curl http://localhost:8007/health
+```
+
+### Available Tools
+
+#### Terrain Generation Tools (185 nodes supported)
+- **create_gaea2_project** - Create custom terrain projects with automatic validation
+- **create_gaea2_from_template** - Use professional workflow templates
+- **validate_and_fix_workflow** - Comprehensive validation and automatic repair
+- **analyze_workflow_patterns** - Pattern-based analysis using real project knowledge
+- **optimize_gaea2_properties** - Optimize for performance or quality
+- **suggest_gaea2_nodes** - Get intelligent node suggestions
+- **repair_gaea2_project** - Repair damaged project files
+
+#### CLI Automation (when running on Windows with Gaea2)
+- **run_gaea2_project** - Execute terrain generation via CLI
+- **analyze_execution_history** - Learn from previous runs
+
+### Configuration
+
+- For containerized deployment: Works out of the box
+- For Windows deployment with CLI features: Set `GAEA2_PATH` environment variable
+- See `tools/mcp/gaea2/docs/README.md` for complete documentation
+
+## Gemini MCP Server (Port 8006)
+
+The Gemini server provides AI assistance through the Gemini CLI. It **must run on the host system** because it requires Docker access.
+
+### Starting the Server
+
+```bash
+# Must run on host system (not in container)
+python -m tools.mcp.gemini.server
+
+# Or use HTTP mode
+python -m tools.mcp.gemini.server --mode http
 
 # Or use the helper script
-./scripts/start-gemini-mcp.sh
+./tools/mcp/gemini/scripts/start_server.sh
 
 # Test health
 curl http://localhost:8006/health
@@ -73,122 +142,114 @@ curl http://localhost:8006/health
 
 ### Available Tools
 
-#### AI Integration Tools
-- **consult_gemini** - Get AI assistance for technical questions, code reviews, and recommendations
-  - Parameters:
-    - `prompt` (required): The question or code to analyze
-    - `context` (optional): Additional context as a dictionary
-    - `max_retries` (optional): Maximum retry attempts (default: 3)
+- **consult_gemini** - Get AI assistance for technical questions
+- **clear_gemini_history** - Clear conversation history
+- **gemini_status** - Get integration status
+- **toggle_gemini_auto_consult** - Control auto-consultation
 
-- **clear_gemini_history** - Clear conversation history for fresh responses
-  - No parameters required
-  - Returns the number of cleared entries
+### Container Detection
 
-### API Endpoints
+The server includes automatic container detection and will exit with an error if run in a container:
 
-- `GET /` - Server information
-- `GET /health` - Health check endpoint
-- `POST /tools/consult_gemini` - Consult Gemini AI
-- `POST /tools/clear_gemini_history` - Clear conversation history
-- `GET /mcp/tools` - List available MCP tools
+```bash
+# This will fail with a helpful error message
+docker-compose run --rm python-ci python -m tools.mcp.gemini.server
+```
 
-### Example Usage
+See `tools/mcp/gemini/docs/README.md` for detailed documentation.
 
-```python
-import requests
+## Unified Testing
 
-# Consult Gemini
-response = requests.post(
-    "http://localhost:8006/tools/consult_gemini",
-    json={
-        "prompt": "What are the best practices for Python async programming?",
-        "context": {"project": "web-api"}
-    }
-)
-result = response.json()
-print(result["response"])
+Test all servers at once:
 
-# Clear history
-response = requests.post("http://localhost:8006/tools/clear_gemini_history")
-print(f"Cleared {response.json()['cleared_count']} entries")
+```bash
+# Test all running servers
+python scripts/mcp/test_all_servers.py
+
+# Quick connectivity test only
+python scripts/mcp/test_all_servers.py --quick
+
+# Test individual servers
+python tools/mcp/code_quality/scripts/test_server.py
+python tools/mcp/content_creation/scripts/test_server.py
+python tools/mcp/gaea2/scripts/test_server.py
+python tools/mcp/gemini/scripts/test_server.py
 ```
 
 ## Configuration
 
-Both servers are configured in `.mcp.json`:
+The modular servers are configured in `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "local-tools": {
-      "name": "Local MCP Tools",
-      "url": "http://localhost:8005",
-      "tools": { /* ... */ }
+    "code-quality": {
+      "name": "Code Quality MCP Server",
+      "url": "http://localhost:8010"
     },
-    "gemini-tools": {
+    "content-creation": {
+      "name": "Content Creation MCP Server",
+      "url": "http://localhost:8011"
+    },
+    "gaea2": {
+      "name": "Gaea2 MCP Server",
+      "url": "${GAEA2_REMOTE_URL:-http://localhost:8007}"
+    },
+    "gemini": {
       "name": "Gemini MCP Server",
       "url": "http://localhost:8006",
-      "note": "Must run on host system, not in container",
-      "tools": { /* ... */ }
+      "note": "Must run on host system"
     }
   }
 }
 ```
 
-## Testing
+## Client Usage
 
-Test scripts are provided for both servers:
+The `main.py` client can target specific servers:
 
-```bash
-# Test main MCP server
-python3 scripts/test-mcp-server.py
+```python
+# Target a specific server
+export MCP_SERVER_NAME=gaea2
+python main.py
 
-# Test Gemini MCP server
-python3 scripts/test-gemini-mcp-server.py
-
-# Test container detection
-./scripts/test-gemini-container-exit.sh
+# Or use the server URL directly
+export MCP_SERVER_URL=http://localhost:8007
+python main.py
 ```
 
 ## Troubleshooting
 
-### Main MCP Server Issues
+### Port Already in Use
 
-1. **Port 8005 already in use**
-   ```bash
-   # Find process using port
-   sudo lsof -i :8005
-   # Stop the container
-   docker-compose down mcp-server
-   ```
+```bash
+# Find process using a port (e.g., 8010)
+sudo lsof -i :8010
 
-2. **Container permission issues**
-   ```bash
-   ./scripts/fix-runner-permissions.sh
-   ```
+# Stop specific container
+docker-compose down mcp-code-quality
+```
 
-### Gemini MCP Server Issues
+### Container Permission Issues
 
-1. **"Cannot run in container" error**
-   - This is expected behavior
-   - Run the server directly on the host system
+```bash
+./scripts/fix-runner-permissions.sh
+```
 
-2. **Gemini CLI not found**
-   - Install Gemini CLI: `npm install -g @google/gemini-cli`
-   - Authenticate: Run `gemini` command once
+### Gemini Server Issues
 
-3. **Port 8006 already in use**
-   ```bash
-   # Check for existing process
-   ps aux | grep gemini_mcp_server
-   # Kill if needed
-   kill $(cat /tmp/gemini-mcp.pid)
-   ```
+1. **"Cannot run in container" error** - Run on host system
+2. **Gemini CLI not found** - Install with `npm install -g @google/gemini-cli`
+
+### Gaea2 Windows CLI Features
+
+1. **Set GAEA2_PATH** environment variable to Gaea.Swarm.exe location
+2. **Ensure Windows host** for CLI automation features
 
 ## Development Notes
 
-- The main MCP server can be extended with new tools by adding methods to the `MCPTools` class
-- The Gemini MCP server uses the existing `GeminiIntegration` class from `tools/gemini/`
-- Both servers use FastAPI for the HTTP API
-- Container detection is performed immediately on startup for the Gemini server
-- All tools return JSON responses with consistent error handling
+- Each server extends `BaseMCPServer` from `tools/mcp/core/`
+- Servers can run standalone or via Docker Compose
+- All servers provide consistent JSON API responses
+- Use the modular architecture to add new specialized servers
+- Follow the container-first philosophy except where technically impossible (Gemini)

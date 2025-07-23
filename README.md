@@ -11,7 +11,11 @@ This project follows a **container-first approach**:
 - **Zero external dependencies** - runs on any Linux system with Docker
 - **Self-hosted infrastructure** - no cloud costs, full control over runners
 - **Single maintainer design** - optimized for individual developer productivity
-- **Separated MCP servers** - Main MCP server (port 8005) and Gemini MCP server (port 8006)
+- **Modular MCP architecture** - Separate specialized servers for different functionalities:
+  - Code Quality MCP (port 8010)
+  - Content Creation MCP (port 8011)
+  - Gaea2 MCP (port 8007)
+  - Gemini MCP (port 8006, host-only)
 
 ## AI Agents
 
@@ -35,6 +39,9 @@ This repository leverages **three AI agents** for development and automation:
 ## Features
 
 - **MCP Server Integration** - Multiple MCP servers for different tool categories
+- **Gaea2 Terrain Generation** - ✅ Fully working MCP integration for all 185 Gaea2 nodes
+  - Standalone Gaea2 MCP server with CLI automation and intelligent validation
+  - Automatic terrain file generation with proper ID formatting (Windows host-only)
 - **ComfyUI Integration** - Image generation workflows
 - **AI Toolkit** - LoRA training capabilities
 - **Gemini AI Consultation** - Standalone MCP server for AI assistance (host-only)
@@ -62,7 +69,7 @@ This repository leverages **three AI agents** for development and automation:
    docker-compose up -d mcp-server
 
    # Start Gemini MCP server (must run on host)
-   python3 tools/mcp/gemini_mcp_server.py
+   python -m tools.mcp.gemini.server
    ```
 
 3. **For CI/CD (optional)**
@@ -97,6 +104,14 @@ This repository leverages **three AI agents** for development and automation:
 - `create_manim_animation` - Create animations
 - `compile_latex` - Generate documents
 
+**Gaea2 Terrain Generation (Fully Working):**
+- `create_gaea2_project` - Create custom terrain projects with automatic validation
+- `validate_and_fix_workflow` - Validate and repair workflows with proper ID handling
+- `create_gaea2_from_template` - Use professional templates for quick terrain creation
+- `analyze_workflow_patterns` - Get pattern-based suggestions from real projects
+- `repair_gaea2_project` - Fix damaged project files automatically
+- Plus 5 more tools - see [Gaea2 documentation](docs/gaea2/README.md)
+
 ### Gemini MCP Server (Port 8006)
 
 **AI Integration (Host-only):**
@@ -120,20 +135,32 @@ See `.env.example` for all available options:
 - `COMFYUI_SERVER_URL` - ComfyUI server endpoint
 - `AI_TOOLKIT_SERVER_URL` - AI Toolkit server endpoint
 
-### Gemini AI Setup
+### Host-Only MCP Servers
 
-The Gemini integration is split into two components:
+Some MCP servers must run on the host system (not in containers):
 
-1. **Gemini MCP Server** (for development assistance):
+1. **Gemini MCP Server** (port 8006) - AI development assistance:
    ```bash
-   # Must run on host system (not in container)
-   python3 tools/mcp/gemini_mcp_server.py
+   # Needs Docker access for Gemini CLI
+   python -m tools.mcp.gemini.server
+   # Or use HTTP mode for testing:
+   python -m tools.mcp.gemini.server --mode http
    ```
 
-2. **Gemini CLI** (for automated PR reviews):
-   - Install Node.js 18+ (recommended: 22.16.0)
-   - Install Gemini CLI: `npm install -g @google/gemini-cli`
-   - Authenticate: Run `gemini` command once
+2. **Gaea2 MCP Server** (port 8007) - Terrain generation with CLI automation:
+   ```bash
+   # Windows only - needs Gaea2 installed
+   set GAEA2_PATH=C:\Program Files\QuadSpinner\Gaea\Gaea.Swarm.exe
+   python tools/mcp/gaea2_mcp_server.py
+   ```
+   See [Gaea2 MCP Server docs](docs/gaea2/GAEA2_MCP_SERVER.md) for details.
+
+### Gemini CLI Setup
+
+For automated PR reviews:
+- Install Node.js 18+ (recommended: 22.16.0)
+- Install Gemini CLI: `npm install -g @google/gemini-cli`
+- Authenticate: Run `gemini` command once
 
 See [setup guide](docs/GEMINI_SETUP.md) for details.
 
