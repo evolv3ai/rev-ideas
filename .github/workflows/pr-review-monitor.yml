@@ -1,0 +1,89 @@
+name: PR Review Monitor Agent
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+  pull_request_review_comment:
+    types:
+      - created
+  schedule:
+    # Also run periodically to catch any missed reviews
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  pull-requests: write # Required to comment on PRs and push changes
+  contents: read       # Changed from write to read - only need to read code
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  monitor-pr-reviews:
+    name: Monitor PR Reviews
+    runs-on: self-hosted
+    environment: production
+    # Only run if AI agents are enabled AND relevant event occurs
+    # Note: User authorization is handled by the SecurityManager in the Python agent
+    if: |
+      vars.ENABLE_AI_AGENTS == 'true' && (
+        github.event_name == 'schedule' ||
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'pull_request_review' &&
+         github.event.review.state == 'changes_requested') ||
+        github.event_name == 'pull_request_review_comment'
+      )
+
+    steps:
+      - name: Security Check - Log Event Details
+        run: |
+          echo "Event: ${{ github.event_name }}"
+          echo "Actor: ${{ github.actor }}"
+          if [ "${{ github.event_name }}" = "pull_request_review" ] || [ "${{ github.event_name }}" = "pull_request_review_comment" ]; then
+            echo "PR Author: ${{ github.event.pull_request.user.login }}"
+            echo "PR Number: ${{ github.event.pull_request.number }}"
+            echo "Review Author: ${{ github.event.review.user.login || github.event.comment.user.login }}"
+          fi
+
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "AI Review Agent"
+          git config --global user.email "ai-review-agent@localhost"
+
+      - name: Build AI agents container
+        run: |
+          docker-compose build ai-agents
+
+      - name: Run PR review monitor in container
+        env:
+          GITHUB_TOKEN: ${{ secrets.AI_AGENT_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ENABLE_AI_AGENTS: ${{ vars.ENABLE_AI_AGENTS }}
+          USER_ID: 1000
+          GROUP_ID: 1000
+        run: |
+          echo "Running PR review monitor for repository: $GITHUB_REPOSITORY"
+
+          # If triggered by a specific PR event, we can optimize by checking just that PR
+          if [ "${{ github.event_name }}" = "pull_request_review" ] || [ "${{ github.event_name }}" = "pull_request_review_comment" ]; then
+            echo "Triggered by PR event on PR #${{ github.event.pull_request.number }}"
+          fi
+
+          docker-compose run --rm \
+            -e GITHUB_TOKEN \
+            -e GITHUB_REPOSITORY \
+            -e ENABLE_AI_AGENTS \
+            ai-agents python scripts/agents/pr_review_monitor.py
+
+      - name: Log monitoring results
+        if: always()
+        run: |
+          echo "PR review monitoring completed at $(date)"

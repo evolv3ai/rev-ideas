@@ -1,0 +1,79 @@
+name: Issue Monitor Agent
+
+on:
+  schedule:
+    # Run every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+  issues:
+    types:
+      - opened
+      - edited
+      - labeled
+
+permissions:
+  issues: write       # Required to comment on issues and read issue data
+  pull-requests: write # Required to create pull requests
+  contents: read      # Changed from write to read - only need to read code
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  monitor-issues:
+    name: Monitor GitHub Issues
+    runs-on: self-hosted
+    environment: production
+    # Only run if AI agents are enabled AND (manual trigger OR schedule OR issue event)
+    # Note: User authorization is handled by the SecurityManager in the Python agent
+    if: |
+      vars.ENABLE_AI_AGENTS == 'true' && (
+        github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'schedule' ||
+        github.event_name == 'issues'
+      )
+
+    steps:
+      - name: Security Check - Log Event Details
+        run: |
+          echo "Event: ${{ github.event_name }}"
+          echo "Actor: ${{ github.actor }}"
+          if [ "${{ github.event_name }}" = "issues" ]; then
+            echo "Issue Author: ${{ github.event.issue.user.login }}"
+            echo "Issue Number: ${{ github.event.issue.number }}"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "AI Issue Agent"
+          git config --global user.email "ai-agent@localhost"
+
+      - name: Build AI agents container
+        run: |
+          docker-compose build ai-agents
+
+      - name: Run issue monitor in container
+        env:
+          GITHUB_TOKEN: ${{ secrets.AI_AGENT_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ENABLE_AI_AGENTS: ${{ vars.ENABLE_AI_AGENTS }}
+          USER_ID: 1000
+          GROUP_ID: 1000
+        run: |
+          echo "Running issue monitor for repository: $GITHUB_REPOSITORY"
+          docker-compose run --rm \
+            -e GITHUB_TOKEN \
+            -e GITHUB_REPOSITORY \
+            -e ENABLE_AI_AGENTS \
+            ai-agents python scripts/agents/issue_monitor.py
+
+      - name: Log monitoring results
+        if: always()
+        run: |
+          echo "Issue monitoring completed at $(date)"
