@@ -23,6 +23,7 @@
       "review_bot_names": [
         "gemini-bot",
         "github-actions[bot]",
+        "github-actions",
         "dependabot[bot]"
       ],
       "auto_fix_threshold": {

@@ -1,8 +1,17 @@
 {
   "mcpServers": {
     "code-quality": {
-      "command": "python",
+      "command": "docker-compose",
       "args": [
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-code-quality",
+        "python",
         "-m",
         "tools.mcp.code_quality.server",
         "--mode",
@@ -10,8 +19,17 @@
       ]
     },
     "content-creation": {
-      "command": "python",
+      "command": "docker-compose",
       "args": [
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-content-creation",
+        "python",
         "-m",
         "tools.mcp.content_creation.server",
         "--mode",
@@ -19,7 +37,7 @@
       ]
     },
     "gemini": {
-      "command": "python",
+      "command": "python3",
       "args": [
         "-m",
         "tools.mcp.gemini.server",
@@ -27,35 +45,21 @@
         "stdio"
       ],
       "env": {
-        "GEMINI_MODEL": "gemini-2.0-flash-exp",
-        "GEMINI_TIMEOUT": "60"
+        "GEMINI_MODEL": "gemini-2.5-pro",
+        "GEMINI_TIMEOUT": "300"
       }
     },
     "gaea2": {
-      "command": "python",
-      "args": [
-        "-m",
-        "tools.mcp.gaea2.server",
-        "--mode",
-        "stdio"
-      ]
-    }
-  },
-  "settings": {
-    "timeout": 30,
-    "max_retries": 3,
-    "log_level": "INFO",
-    "enable_caching": true,
-    "cache_ttl": 3600
-  },
-  "security": {
-    "require_auth": false,
-    "allowed_origins": [
-      "*"
-    ],
-    "rate_limit": {
-      "enabled": true,
-      "requests_per_minute": 60
+      "type": "http",
+      "url": "http://192.168.0.152:8007/messages"
+    },
+    "aitoolkit": {
+      "type": "http",
+      "url": "http://192.168.0.152:8012/messages"
+    },
+    "comfyui": {
+      "type": "http",
+      "url": "http://192.168.0.152:8013/messages"
     }
   }
 }

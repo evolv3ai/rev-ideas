@@ -2,9 +2,15 @@ name: Issue Monitor Agent
 
 on:
   schedule:
-    # Run every 15 minutes
-    - cron: '*/15 * * * *'
-  workflow_dispatch: {}
+    # Run every hour
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_reprocess:
+        description: 'Force reprocess issues even if they have existing AI agent comments'
+        required: false
+        type: boolean
+        default: false
   issues:
     types:
       - opened
@@ -14,7 +20,7 @@ on:
 permissions:
   issues: write       # Required to comment on issues and read issue data
   pull-requests: write # Required to create pull requests
-  contents: read      # Changed from write to read - only need to read code
+  contents: read      # For actions/checkout. Agent uses AI_AGENT_TOKEN with write perms.
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -23,7 +29,6 @@ jobs:
   monitor-issues:
     name: Monitor GitHub Issues
     runs-on: self-hosted
-    environment: production
     # Only run if AI agents are enabled AND (manual trigger OR schedule OR issue event)
     # Note: User authorization is handled by the SecurityManager in the Python agent
     if: |
@@ -47,10 +52,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.AI_AGENT_TOKEN }}
 
       - name: Configure Git
         run: |
+          # Set git identity on the host. This works for the container because:
+          # 1. The container runs as the same user (USER_ID:GROUP_ID)
+          # 2. Git's global config is stored in the user's home directory
+          # 3. The container mounts the host's file system, inheriting this config
           git config --global user.name "AI Issue Agent"
           git config --global user.email "ai-agent@localhost"
 
@@ -60,18 +69,43 @@ jobs:
 
       - name: Run issue monitor in container
         env:
+          # Use AI_AGENT_TOKEN which has write permissions for creating branches/PRs
           GITHUB_TOKEN: ${{ secrets.AI_AGENT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ENABLE_AI_AGENTS: ${{ vars.ENABLE_AI_AGENTS }}
-          USER_ID: 1000
-          GROUP_ID: 1000
+          FORCE_REPROCESS: ${{ inputs.force_reprocess || 'false' }}
+          # List of environment variables whose values should be masked in public comments
+          MASK_ENV_VARS: "GITHUB_TOKEN,AI_AGENT_TOKEN"
         run: |
           echo "Running issue monitor for repository: $GITHUB_REPOSITORY"
-          docker-compose run --rm \
-            -e GITHUB_TOKEN \
-            -e GITHUB_REPOSITORY \
-            -e ENABLE_AI_AGENTS \
-            ai-agents python scripts/agents/issue_monitor.py
+          # Export dynamic user/group IDs to match project standards
+          export USER_ID=$(id -u)
+          export GROUP_ID=$(id -g)
+
+          # Run the container with the monitoring script
+          docker-compose run --rm -T --user "${USER_ID}:${GROUP_ID}" \
+            -v "$HOME/.claude:/host-claude:ro" \
+            -v "$HOME/.config/gh:/host-gh:ro" \
+            -e GITHUB_TOKEN="${GITHUB_TOKEN}" \
+            -e GITHUB_REPOSITORY="${GITHUB_REPOSITORY}" \
+            -e ENABLE_AI_AGENTS="${ENABLE_AI_AGENTS}" \
+            -e FORCE_REPROCESS="${FORCE_REPROCESS:-false}" \
+            -e MASK_ENV_VARS="${MASK_ENV_VARS}" \
+            -e PYTHONPATH=/workspace \
+            -e PYTHONUNBUFFERED=1 \
+            ai-agents bash scripts/agents/run_issue_monitor.sh || {
+              exit_code=$?
+              echo "[ERROR] Issue monitor script failed with exit code: $exit_code"
+
+              # Run debug script on failure
+              echo "[DEBUG] Running import debug script..."
+              docker-compose run --rm -T --user "${USER_ID}:${GROUP_ID}" \
+                -e PYTHONPATH=/workspace \
+                -e PYTHONUNBUFFERED=1 \
+                ai-agents python scripts/agents/debug_imports.py
+
+              exit $exit_code
+            }
 
       - name: Log monitoring results
         if: always()

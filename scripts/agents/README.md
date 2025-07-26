@@ -2,7 +2,15 @@
 
 ## Overview
 
-The AI agents system includes comprehensive security measures to prevent unauthorized use and protect against prompt injection attacks. Only users on an explicit allow list can trigger AI agent actions using specific keyword triggers.
+The AI agents system implements a comprehensive security model designed to prevent unauthorized use, prompt injection attacks, and malicious code insertion. The system uses multiple layers of defense including user authentication, keyword-based command triggers, and real-time commit validation during PR processing.
+
+## Core Security Principles
+
+1. **Zero Trust by Default**: No action is taken without explicit authorization
+2. **Defense in Depth**: Multiple security layers that work independently
+3. **Audit Trail**: All actions are logged with user attribution
+4. **Fail Secure**: Any security failure results in no action taken
+5. **Real-time Validation**: Continuous security checks during execution
 
 ## Security Features
 
@@ -25,12 +33,18 @@ Our AI agents implement defense-in-depth with multiple security layers:
 
 The allow list is configured in `config.json` under the `security.allow_list` field. The repository owner (extracted from `GITHUB_REPOSITORY` environment variable) is always included automatically.
 
-### 3. Keyword Trigger System
+### 3. Keyword Trigger System - Command and Control
 
-To prevent accidental or unauthorized agent activation, AI agents require specific keyword triggers in comments from allowed users:
+AI agents are controlled exclusively through a keyword trigger system that requires explicit commands from authorized users. This prevents accidental activation and provides clear audit trails.
 
 #### Trigger Format
 The trigger format is: `[Action][Agent]`
+
+**Security Properties:**
+- Case-insensitive matching for user convenience
+- Must be exact format with square brackets
+- Only the most recent trigger is processed
+- Invalid triggers are ignored (fail secure)
 
 #### Supported Actions
 - `[Approved]` - Approve and process the issue/PR
@@ -46,17 +60,21 @@ The trigger format is: `[Action][Agent]`
 - `[Gemini]` - Gemini CLI agent
 
 #### Examples
-- `[Approved][Claude]` - Have Claude process the issue
+- `[Approved][Claude]` - Have Claude process the issue/PR
 - `[Fix][Claude]` - Have Claude fix the reported bug
-- `[Summarize][Gemini]` - Have Gemini provide a summary
+- `[Implement][Claude]` - Have Claude implement a feature
+- `[Review][Claude]` - Have Claude review and address PR feedback
 - `[Close][Claude]` - Have Claude close the issue
-- `[Review][Gemini]` - Have Gemini review and address PR feedback
+- `[Summarize][Gemini]` - Have Gemini provide a summary
+- `[Debug][Claude]` - Have Claude debug an issue
 
-#### How It Works
-1. An allowed user comments on an issue/PR with a keyword trigger
-2. The agent checks for the most recent valid trigger from an allowed user
-3. If found, the agent processes the request based on the action
-4. The agent selection (`[Claude]`, `[Gemini]`, etc.) can be used for routing to specific agents
+#### Security Flow
+1. **User Action**: An allowed user comments with `[Action][Agent]`
+2. **Authentication**: System verifies user is in allow list
+3. **Authorization**: System checks rate limits and repository permissions
+4. **Validation**: System ensures trigger is on latest commit (for PRs)
+5. **Execution**: Agent performs requested action
+6. **Audit**: All actions logged with full context
 
 ### 4. Configuration
 
@@ -230,11 +248,50 @@ Per Gemini's analysis, these risks still require external mitigation:
 
 ## AI Agent Controls
 
-The `ENABLE_AI_AGENTS` environment variable is a master switch that controls:
+### Kill Switch Functionality
+
+The `ENABLE_AI_AGENTS` environment variable serves as a master kill switch:
 
 1. **Scheduled Runs**: When `false`, cron-triggered workflows won't run
-2. **Auto-Fix Capability**: When `true`, PR Review Monitor can implement code fixes
-3. **Manual Triggers**: Still work regardless of this setting for testing
+2. **Workflow Gating**: GitHub Actions check this variable before running
+3. **Manual Override**: Manual workflow triggers bypass this for testing
+
+**Emergency Shutdown Procedure:**
+
+#### Step 1: set ENABLE_AI_AGENTS to false
+
+Toggle via GitHub UI:
+Settings → Variables → ENABLE_AI_AGENTS → Update → false
+
+Toggle via GitHub CLI:
+
+```bash
+gh variable set ENABLE_AI_AGENTS --body="false"
+```
+
+#### Step 2: Disable AI agent itegrated workflows (e.g. issue/pr monitoring)
+
+Actions → AI Agent Workflow → Disable Workflow
+
+### Environment Isolation
+
+**Critical Security Principle**: AI agents must be restricted to development environments only.
+
+```yaml
+# Example workflow configuration
+jobs:
+  ai-agent:
+    environment: development  # NEVER use 'production' here
+    env:
+      GITHUB_TOKEN: ${{ secrets.AI_AGENT_TOKEN }}  # Limited scope token
+```
+
+**Environment Setup:**
+- **Production**: No AI agent secrets or access
+- **Staging**: No AI agent secrets or access
+- **Development**: Limited AI agent token with minimal permissions
+
+This ensures that even if all other security controls fail, AI agents cannot access production systems or secrets.
 
 ### Auto-Fix Security Features:
 
@@ -255,16 +312,270 @@ export ENABLE_AI_AGENTS=true
 ```
 
 **Security Recommendation**: Only enable in controlled environments with trusted reviewers.
+
+### PR Review Monitor Configuration
+
+The PR Review Monitor relies on keyword triggers from authorized users for security:
+
+1. **Keyword Triggers Required**: PRs are only processed when an authorized user comments with `[Action][Agent]`
+   - No label requirements - keyword approval is sufficient
+   - This simplifies the workflow and reduces configuration overhead
+   - All security is handled through the allow list and keyword system
+
+2. **Simplified Configuration**:
+   - No label requirements or configurations needed
+   - PRs are processed based solely on keyword triggers
+   - Reduces configuration complexity and maintenance
+
+3. **Configuration Examples**:
+   ```json
+   {
+     "agents": {
+       "issue_monitor": {
+         "min_description_length": 50,
+         "cutoff_hours": 24
+       },
+       "pr_review_monitor": {
+         "cutoff_hours": 24,
+         "auto_fix_threshold": {
+           "critical_issues": 0,
+           "total_issues": 5
+         }
+       }
+     }
+   }
+   ```
+
 4. **Code Review**: All changes to workflows and agent scripts must be reviewed
 
-## Security Considerations
+### 5. Developer Override Risk
 
-This security implementation protects against:
-- **Prompt Injection**: Multiple layers prevent malicious command injection
-- **Impersonation**: Workflow-level checks prevent spoofed requests
-- **Resource Abuse**: Rate limiting prevents excessive AI usage
-- **Unauthorized Changes**: Only trusted users can trigger code changes
-- **Social Engineering**: Multi-layer validation prevents bypass attempts
+**Known Limitation**: Developers with repository write access can modify `.github/workflows` files to potentially bypass security controls.
+
+**Accepted Risk with Mitigations**:
+1. **Environment Isolation**: Even if workflows are modified, agents only have DEV access
+2. **Branch Protection**: Require reviews for `.github/workflows/**` changes
+3. **Audit Trail**: All workflow modifications are tracked in git history
+4. **Monitoring**: Regular reviews of workflow changes
+5. **Token Scoping**: AI_AGENT_TOKEN has minimal permissions
+
+**Recommended Branch Protection**:
+```yaml
+# .github/CODEOWNERS
+.github/workflows/ @repository-owner @security-team
+
+# Branch protection rules
+- Require pull request reviews before merging
+- Dismiss stale pull request approvals
+- Require review from CODEOWNERS
+```
+
+### 4. Advanced Security: Commit-Level Validation for Pull Requests
+
+The PR monitoring system implements sophisticated commit-level security to prevent code injection attacks during the review and modification process.
+
+#### The Threat Model
+Without commit validation, an attacker could:
+1. Create an innocent-looking PR
+2. Wait for approval from an authorized user
+3. Push malicious code after approval but before AI processing
+4. Have the AI agent unknowingly work on and push malicious code
+
+#### Our Multi-Stage Defense
+
+**Stage 1 - Approval Commit Tracking**
+- When `[Approved][Claude]` is issued, the system records the exact commit SHA
+- This creates an immutable "point-in-time" snapshot of what was approved
+- The approval is cryptographically tied to the repository state
+
+**Stage 2 - Pre-Execution Validation**
+```
+if (current_commit != approval_commit) {
+    reject_with_security_notice();
+    request_fresh_approval();
+}
+```
+- Prevents any work if the PR has changed since approval
+- Immediate failure with clear security message
+
+**Stage 3 - Pre-Push Validation**
+```bash
+# Before pushing any changes
+git fetch origin
+if [ commits_since_approval > 0 ]; then
+    abort_all_work();
+    post_security_warning();
+    exit 1;
+fi
+```
+- Final check before any code enters the repository
+- Drops all work if PR was modified during processing
+- Prevents race conditions and TOCTOU attacks
+
+#### Real-World Attack Prevention
+
+**Scenario 1: Post-Approval Injection**
+```
+Time 0: Attacker creates PR with innocent code
+Time 1: Admin reviews and approves with [Approved][Claude]
+Time 2: Attacker pushes malicious commit
+Time 3: AI agent detects mismatch and refuses to proceed ✓
+```
+
+**Scenario 2: Race Condition During Work**
+```
+Time 0: Admin approves PR with [Approved][Claude]
+Time 1: AI agent begins working
+Time 2: Attacker pushes malicious commit
+Time 3: AI agent attempts to push
+Time 4: Pre-push validation detects new commit and aborts ✓
+```
+
+#### Security Properties
+- **Immutable Approval**: Approvals cannot be transferred to different code
+- **Atomic Operations**: Either all changes are safe or nothing is pushed
+- **Clear Attribution**: Every commit linked to specific approval
+- **No Silent Failures**: All rejections create visible security notices
+
+### 5. Implementation Security for Issues
+
+The Issue Monitor Agent now implements complete solutions before creating PRs:
+
+**Security Measures:**
+- AI agent must successfully implement and commit code
+- No placeholder or draft PRs allowed
+- Failed implementations abort the entire process
+- PRs are created only with working, tested code
+- Clear error messages if implementation fails
+
+**Benefits:**
+- No half-completed PRs that could be exploited
+- All PRs are ready for immediate review
+- Reduces window for malicious interference
+- Clear success/failure states
+
+## Deterministic Security Processes
+
+The AI agents implement three core deterministic security processes that ensure predictable and secure behavior:
+
+### 1. Secret Masking for Agent Outputs
+
+All agent outputs are processed through multi-layer secret masking before being posted to GitHub:
+
+**Implementation:**
+- **Logging**: `SecretRedactionFilter` automatically redacts secrets in all Python logs
+- **GitHub Comments**: `mask_secrets()` method sanitizes all PR/issue comments
+- **Error Details**: Command outputs from failed operations are masked
+- **Pattern Detection**: Automatic detection of tokens, API keys, and credentials
+
+**Example:**
+```python
+# In pr_review_monitor.py
+masked_output = self.mask_secrets(agent_output)
+masked_error_details = self.mask_secrets(error_details)
+```
+
+### 2. Deterministic Issue/PR Filtering
+
+Issues and PRs are filtered through a strict, deterministic pipeline:
+
+```
+Time Filter → Trigger Check → Security Check → Rate Limit → Deduplication → Process
+```
+
+**Each stage is deterministic:**
+- **Time**: Only items updated within `cutoff_hours` (default: 24h)
+- **Trigger**: Must have exact `[Action][Agent]` format
+- **Security**: User must be in `allow_list`
+- **Rate Limit**: Enforced per user per time window
+- **Deduplication**: Skip if `[AI Agent]` comment exists
+
+### 3. Commit Validation Security
+
+Prevents code injection by validating commits at three stages:
+
+1. **Approval Recording**: SHA captured when `[Approved][Claude]` is issued
+2. **Pre-Work Check**: Validates no new commits before starting
+3. **Pre-Push Check**: Final validation before pushing changes
+
+**Implementation in bash scripts:**
+```bash
+# Security check before push
+if [ -n "$APPROVAL_COMMIT_SHA" ]; then
+    NEW_COMMITS=$(git rev-list "$APPROVAL_COMMIT_SHA"..HEAD --count)
+    if [ "$NEW_COMMITS" -gt 0 ]; then
+        echo "ERROR: New commits detected!"
+        exit 1
+    fi
+fi
+```
+
+For complete details on these deterministic processes, see [SECURITY.md](../../SECURITY.md).
+
+## Complete Security Model Summary
+
+### Attack Vectors Prevented
+
+1. **Unauthorized Access**
+   - ✓ Allow list prevents unauthorized users
+   - ✓ Workflow-level checks block at GitHub Actions layer
+   - ✓ Application-level validation as backup
+
+2. **Prompt Injection**
+   - ✓ Keyword triggers only accept predefined commands
+   - ✓ No free-form text execution
+   - ✓ Commands tied to specific users
+
+3. **Code Injection**
+   - ✓ Commit-level validation prevents post-approval attacks
+   - ✓ Real-time validation during execution
+   - ✓ Atomic operations ensure consistency
+
+4. **Resource Abuse**
+   - ✓ Rate limiting per user
+   - ✓ Repository restrictions
+   - ✓ Action-specific limits
+
+5. **Social Engineering**
+   - ✓ Multi-layer validation
+   - ✓ Clear audit trails
+   - ✓ Visible security notices
+
+### Security Configuration
+
+All security settings in `config.json`:
+```json
+{
+  "security": {
+    "enabled": true,
+    "allow_list": ["trusted-user1", "trusted-user2"],
+    "rate_limit_window_minutes": 60,
+    "rate_limit_max_requests": 10,
+    "allowed_repositories": ["owner/repo"],
+    "log_violations": true,
+    "reject_message": "Custom security message"
+  }
+}
+```
+
+### Security Best Practices
+
+1. **Minimal Allow List**: Only add users who absolutely need access
+2. **Regular Audits**: Review allow list quarterly
+3. **Monitor Logs**: Check for security violations
+4. **Test Security**: Regularly test with unauthorized users
+5. **Update Promptly**: Keep security measures current
+6. **Document Changes**: Track all security modifications
+
+## Security Incident Response
+
+If a security incident occurs:
+
+1. **Immediate**: Disable AI agents via environment variable
+2. **Investigate**: Check logs for unauthorized attempts
+3. **Remediate**: Remove compromised users from allow list
+4. **Document**: Record incident details
+5. **Improve**: Update security measures based on findings
 
 ## Deduplication and State Management
 
@@ -344,7 +655,7 @@ The system uses multiple filters to minimize unnecessary processing:
 ```
 1. Issue #123 created by user
 2. User comments: "[Fix][Claude] Please help with this bug"
-3. Issue Monitor runs (every 15 minutes)
+3. Issue Monitor runs (every hour)
 4. Checks filters:
    - Created within 24 hours? ✓
    - Has keyword trigger? ✓
@@ -355,7 +666,7 @@ The system uses multiple filters to minimize unnecessary processing:
 6. Processes issue:
    - Creates PR #124
    - Posts: "[AI Agent] I've created PR #124 to address this issue..."
-7. Next run (15 minutes later):
+7. Next run (1 hour later):
    - Gets to deduplication check
    - Any [AI Agent] comments? ✓ (Yes!)
    - SKIPS - Already processed
@@ -505,6 +816,56 @@ Empty list defaults to allowing all repositories from the repository owner.
 - Fallback to defaults if config is corrupted
 - Warning logs for config issues without crashing
 
+## Secret Masking in Public Comments
+
+The PR monitoring agent includes comprehensive secret masking to prevent accidental exposure of sensitive information in public PR comments:
+
+### How It Works
+
+1. **Workflow Configuration**: Define which environment variables to mask in the workflow YAML:
+   ```yaml
+   env:
+     MASK_ENV_VARS: "GITHUB_TOKEN,AI_AGENT_TOKEN,ANTHROPIC_API_KEY"
+   ```
+
+2. **Auto-Detection**: The agent automatically detects sensitive variables based on naming patterns:
+   - Variables starting with: `SECRET_`, `TOKEN_`, `API_`, `KEY_`, `PASSWORD_`, `PRIVATE_`
+   - Variables ending with: `_SECRET`, `_TOKEN`, `_API_KEY`, `_KEY`, `_PASSWORD`, `_PRIVATE_KEY`
+
+3. **Pattern Matching**: Common secret patterns are always masked:
+   - GitHub tokens: `ghp_*`, `ghs_*`, `github_pat_*`
+   - API keys: `sk-*`, `pk-*`
+   - Bearer tokens
+   - URLs with embedded credentials
+
+4. **Error Log Masking**: When pipeline fixes fail, error details are automatically masked before posting to PR comments
+
+### Configuration
+
+In your workflow files:
+```yaml
+- name: Run PR review monitor in container
+  env:
+    # Secrets to use
+    GITHUB_TOKEN: ${{ secrets.AI_AGENT_TOKEN }}
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    # Which ones to mask in public comments
+    MASK_ENV_VARS: "GITHUB_TOKEN,AI_AGENT_TOKEN,ANTHROPIC_API_KEY"
+```
+
+The agent will:
+1. Read the `MASK_ENV_VARS` list
+2. Auto-detect additional sensitive variables
+3. Replace any occurrence of these values with `[VARIABLE_NAME]` in error logs
+4. Apply pattern-based masking for common secret formats
+
+### Important Notes
+
+- GitHub Actions automatically masks registered secrets in workflow logs, but this doesn't apply to PR comments
+- The masking happens before any text is posted as a PR comment
+- Both stdout and stderr from failed commands are masked
+- The masking is case-insensitive for patterns but exact-match for environment variable values
+
 ## Best Practices
 
 1. **Use GitHub Environments**: Configure production environment with appropriate secrets
@@ -514,3 +875,4 @@ Empty list defaults to allowing all repositories from the repository owner.
 5. **Minimal Permissions**: Use fine-grained PATs with minimal required permissions
 6. **Test Locally**: Use gh CLI auth for local development
 7. **Rotate Tokens**: Set expiration dates and rotate tokens regularly
+8. **Review Error Logs**: Always review error logs in PR comments to ensure no secrets leaked

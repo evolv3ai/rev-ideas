@@ -126,3 +126,26 @@ def get_secure_logger(name: str) -> logging.Logger:
         logger.addFilter(SecretRedactionFilter())
 
     return logger
+
+
+def mask_secrets(text: str) -> str:
+    """
+    Mask secrets in text using the same patterns as the logging filter.
+
+    Args:
+        text: Text to mask secrets in
+
+    Returns:
+        Text with secrets replaced by [REDACTED]
+    """
+    redaction_filter = SecretRedactionFilter()
+    return redaction_filter._redact_secrets(text)
+
+
+# Export public API
+__all__ = [
+    "SecretRedactionFilter",
+    "setup_secure_logging",
+    "get_secure_logger",
+    "mask_secrets",
+]

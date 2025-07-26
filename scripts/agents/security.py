@@ -294,7 +294,7 @@ class SecurityManager:
         Returns:
             True if comment author is allowed, False otherwise
         """
-        author = comment.get("user", {}).get("login", "")
+        author = comment.get("author", {}).get("login", "")
         if not author:
             logger.warning("Comment has no author information")
             return False
@@ -335,14 +335,36 @@ class SecurityManager:
         Returns:
             Tuple of (action, agent, username) if triggered, None otherwise
         """
+        # First check the issue/PR body itself
+        body = issue_or_pr.get("body", "")
+        author = issue_or_pr.get("author", {}).get("login", "")
+
+        # Log what we're checking
+        logger.debug(f"Checking {entity_type} body for triggers")
+        logger.debug(f"Author from issue data: '{author}'")
+
+        if author and self.is_user_allowed(author):
+            trigger = self.parse_keyword_trigger(body)
+            if trigger:
+                action, agent = trigger
+                logger.info(f"Found valid trigger in {entity_type} body from {author}: [{action}][{agent}]")
+                return (action, agent, author)
+
+        # Then check comments
         comments = issue_or_pr.get("comments", [])
+        logger.debug(f"Checking {len(comments)} comments for triggers in {entity_type}")
 
         # Check comments in reverse order (most recent first)
-        for comment in reversed(comments):
-            author = comment.get("user", {}).get("login", "")
+        for i, comment in enumerate(reversed(comments)):
+            # Try both "user" and "author" fields since GitHub API is inconsistent
+            author = comment.get("user", {}).get("login", "") or comment.get("author", {}).get("login", "")
+
+            # Log comment details for debugging
+            logger.debug(f"Comment {i}: author={author}, has_body={'body' in comment}")
 
             # Skip if not from allowed user
             if not self.is_user_allowed(author):
+                logger.debug(f"Skipping comment from non-allowed user: {author}")
                 continue
 
             # Check for keyword trigger
@@ -423,20 +445,18 @@ class SecurityManager:
             reason = (
                 f"Rate limit exceeded: {request_count}/{self.rate_limit_max_requests} "
                 f"requests in {self.rate_limit_window} minutes. "
-                f"Please wait {minutes_remaining} minutes."
+                f"Please wait {minutes_remaining} minutes before trying again."
             )
-
-            if self.log_violations:
-                logger.warning(f"RATE LIMIT: User '{username}' exceeded limit for action '{action}'. {reason}")
-
+            logger.warning(f"Rate limit exceeded for {username}: {reason}")
             return False, reason
 
-        # Record this request
+        # Add current request
         rate_limits[key].append(current_time.timestamp())
-
-        # Save updated rate limits
         self._save_rate_limits(rate_limits)
 
+        logger.debug(
+            f"Rate limit check passed for {username}: " f"{len(rate_limits[key])}/{self.rate_limit_max_requests} requests"
+        )
         return True, None
 
     def check_repository(self, repository: str) -> bool:
@@ -502,11 +522,6 @@ class SecurityManager:
         # Check repository
         if not self.check_repository(repository):
             return False, f"Repository '{repository}' is not allowed"
-
-        # Check rate limit
-        rate_allowed, rate_reason = self.check_rate_limit(username, action)
-        if not rate_allowed:
-            return False, rate_reason
 
         logger.info(
             f"Security check passed: User '{username}' performing '{action}' "

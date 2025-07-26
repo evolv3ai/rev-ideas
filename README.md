@@ -2,6 +2,8 @@
 
 A container-first, self-hosted project template using Model Context Protocol (MCP) tools with zero-cost infrastructure.
 
+![MCP Demo](docs/mcp/mcp-demo.gif)
+
 ## Project Philosophy
 
 This project follows a **container-first approach**:
@@ -40,13 +42,13 @@ This repository leverages **five AI agents** for development and automation:
    - Monitors GitHub issues for completeness
    - Automatically creates PRs from well-described issues
    - Triggered by keyword commands like `[Approved][Claude]`
-   - Runs every 15 minutes via GitHub Actions
+   - Runs every hour via GitHub Actions
 
 5. **PR Review Monitor Agent** (Automated Review Response)
    - Monitors PR reviews and implements requested changes
    - Uses Claude Code CLI to address feedback automatically
    - Triggered by keyword commands like `[Fix][Claude]`
-   - Runs every 30 minutes or on PR review events
+   - Runs every hour or on PR review events
 
 ## Features
 
@@ -118,7 +120,7 @@ This repository leverages **five AI agents** for development and automation:
 - `create_manim_animation` - Create animations
 - `compile_latex` - Generate documents
 
-**Gaea2 Terrain Generation (Fully Working):**
+**Gaea2 Terrain Generation:**
 - `create_gaea2_project` - Create custom terrain projects with automatic validation
 - `validate_and_fix_workflow` - Validate and repair workflows with proper ID handling
 - `create_gaea2_from_template` - Use professional templates for quick terrain creation

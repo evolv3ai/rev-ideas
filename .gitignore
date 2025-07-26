@@ -164,10 +164,12 @@ scratch/
 
 # Generated files
 *.pdf
-*.mp4
-*.gif
 *.webm
 generated/
+
+# Security reports
+bandit-report.json
+safety-report.json
 
 # Large reference files
 reference projects/**/*.resource
