@@ -14,16 +14,15 @@ echo "[INFO] Current directory: $(pwd)"
 export HOME=/tmp/agent-home
 mkdir -p $HOME/.config
 
-# Copy credentials if they exist
-if [ -d /host-claude ]; then
-    echo "[INFO] Copying Claude credentials..."
-    cp -r /host-claude $HOME/.claude
-fi
+# Source the shared credential setup script
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${script_dir}/setup_agent_credentials.sh"
 
-if [ -d /host-gh ]; then
-    echo "[INFO] Copying GitHub CLI config..."
-    cp -r /host-gh $HOME/.config/gh
-fi
+# Set up credentials
+setup_agent_credentials
+
+# GitHub CLI config is handled by setup_agent_credentials function
 
 # Configure git identity
 git config --global user.name 'AI PR Agent'
