@@ -38,11 +38,11 @@ services:
       - "8011:8011"
     volumes:
       - ./:/app:ro
-      - /tmp/mcp-content-output:/tmp/mcp-content-output  # Writable output directory
+      - ./outputs/mcp-content:/output  # Bind mount to local outputs directory
     environment:
       - PYTHONUNBUFFERED=1
       - PORT=8011
-      - MCP_OUTPUT_DIR=/tmp/mcp-content-output
+      - MCP_OUTPUT_DIR=/output
     networks:
       - mcp-network
     command: ["python", "-m", "tools.mcp.content_creation.server", "--mode", "http"]
@@ -67,7 +67,7 @@ services:
       - "8007:8007"
     volumes:
       - ./:/app:ro
-      - gaea2-output:/output/gaea2  # Named volume for terrain files outside /app
+      - ./outputs/mcp-gaea2:/output/gaea2  # Bind mount to local outputs directory
     environment:
       - PYTHONUNBUFFERED=1
       - PORT=8007
@@ -199,7 +199,6 @@ networks:
 
 volumes:
   postgres_data: {}
-  gaea2-output: {}
 
 # Secrets are managed at runtime by GitHub Actions or local setup script
 # Never commit actual secret files to the repository!

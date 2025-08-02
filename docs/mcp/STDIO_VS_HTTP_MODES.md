@@ -1,16 +1,120 @@
-# HTTP Streamable Transport for MCP Servers
+# MCP Server Modes: STDIO vs HTTP
 
-This guide explains how to configure and troubleshoot HTTP-based MCP (Model Context Protocol) servers using the Streamable HTTP transport specification.
+## Critical Understanding
 
-## Overview
+MCP servers in this project support **two different modes** that serve different purposes:
+
+### STDIO Mode (for Claude Desktop/Code)
+- **Configuration**: `.mcp.json`
+- **Usage**: `mcp__<server>__<tool>` functions in Claude
+- **How it works**: Claude spawns the server process and communicates via stdin/stdout
+- **Lifecycle**: Started/stopped automatically by Claude as needed
+
+### HTTP Mode (for Web APIs/Testing)
+- **Configuration**: `docker-compose.yml`
+- **Usage**: Direct HTTP calls to `http://localhost:<port>`
+- **How it works**: Runs as a persistent service
+- **Lifecycle**: Started with `docker-compose up`, runs continuously
+
+## Common Confusion Points
+
+### ❌ WRONG: Starting HTTP server for Claude
+```bash
+# This starts HTTP mode - Claude CANNOT use this!
+docker-compose up mcp-content-creation
+```
+
+### ✅ RIGHT: Claude uses STDIO automatically
+```python
+# Claude reads .mcp.json and starts STDIO server automatically
+# Just use the tool directly:
+result = mcp__content-creation__compile_latex(content="...")
+```
+
+## Server-Specific Configurations
+
+### Content Creation Server
+- **STDIO**: Auto-started by Claude when using `mcp__content-creation__*` tools
+- **HTTP**: `docker-compose up mcp-content-creation` (port 8011)
+
+### Code Quality Server
+- **STDIO**: Auto-started by Claude when using `mcp__code-quality__*` tools
+- **HTTP**: `docker-compose up mcp-code-quality` (port 8010)
+
+### Gemini Server
+- **STDIO**: Must run on host (not in container)
+- **HTTP**: Also runs on host (port 8006)
+
+### Gaea2 Server
+- **STDIO**: Can run locally or connect to remote
+- **HTTP**: Can run locally or at `192.168.0.152:8007`
+
+## Volume Mounts and Output Directories
+
+Both modes can use the same output directories:
+
+### STDIO Mode
+The `.mcp.json` configuration uses `docker-compose run` which respects volume mounts:
+```json
+{
+  "content-creation": {
+    "command": "docker-compose",
+    "args": ["run", "--rm", "-T", "mcp-content-creation", ...]
+  }
+}
+```
+
+### HTTP Mode
+The `docker-compose.yml` defines persistent volume mounts:
+```yaml
+volumes:
+  - ./outputs/mcp-content:/output
+```
+
+Both modes will write to `./outputs/mcp-content/` on the host.
+
+## Troubleshooting
+
+### "mcp__<server>__<tool> not found"
+- The MCP server is not connected in this Claude session
+- Claude manages STDIO connections automatically
+- Try using the tool - Claude should start it
+
+### "Connection refused on port"
+- You're trying to use HTTP mode
+- For Claude, don't start services manually
+- Let Claude handle STDIO connections
+
+### Multiple containers running
+- Clean up with: `docker ps | grep mcp | awk '{print $1}' | xargs docker stop`
+- Remove stopped containers: `docker container prune`
+
+## Best Practices
+
+1. **For Claude Code**: Never manually start MCP servers
+2. **For testing/debugging**: Use HTTP mode with `docker-compose up`
+3. **For output files**: Both modes use the same `outputs/` directory
+4. **For development**: Edit servers knowing they support both modes
+
+## Summary
+
+- **Claude uses STDIO** - Configured in `.mcp.json`, started automatically
+- **HTTP is for APIs** - Configured in `docker-compose.yml`, started manually
+- **Don't mix them up** - They serve different purposes!
+
+## HTTP Mode Technical Implementation
+
+This section provides technical details for implementing and troubleshooting HTTP-based MCP servers using the Streamable HTTP transport specification.
+
+### Overview
 
 The Streamable HTTP transport allows MCP servers to operate as independent HTTP services that can handle multiple client connections. This transport uses HTTP POST and GET requests, with optional Server-Sent Events (SSE) support for streaming.
 
 For the complete specification, see: [MCP Streamable HTTP Transport Specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http)
 
-## Configuration
+### HTTP Configuration
 
-### Basic Configuration in .mcp.json
+#### Basic Configuration in .mcp.json
 
 ```json
 {
@@ -25,7 +129,7 @@ For the complete specification, see: [MCP Streamable HTTP Transport Specificatio
 
 **Important**: The URL must point to the `/messages` endpoint, not `/mcp` or other paths.
 
-### Remote Server Configuration
+#### Remote Server Configuration
 
 For servers running on remote machines:
 
@@ -40,13 +144,13 @@ For servers running on remote machines:
 }
 ```
 
-## Server Implementation Requirements
+### Server Implementation Requirements
 
-### 1. Single Endpoint
+#### 1. Single Endpoint
 
 The server MUST provide a single HTTP endpoint (e.g., `/messages`) that supports both POST and GET methods.
 
-### 2. OAuth Discovery (Optional but Recommended)
+#### 2. OAuth Discovery (Optional but Recommended)
 
 If your server implements OAuth, ensure these endpoints return consistent URLs:
 
@@ -64,7 +168,7 @@ The protected resource URL must match your configured endpoint:
 }
 ```
 
-### 3. Session Management
+#### 3. Session Management
 
 The server should generate and return a session ID during initialization:
 
@@ -79,7 +183,7 @@ headers = {
 }
 ```
 
-### 4. Protocol Version Handling
+#### 4. Protocol Version Handling
 
 Echo back the client's requested protocol version:
 
@@ -95,7 +199,7 @@ return {
 }
 ```
 
-### 5. Notification Handling
+#### 5. Notification Handling
 
 Notifications (requests without an `id` field) MUST return 202 Accepted with no body:
 
@@ -104,7 +208,7 @@ if request_id is None:  # This is a notification
     return Response(status_code=202, headers={"Mcp-Session-Id": session_id})
 ```
 
-## Complete Connection Flow
+### Complete Connection Flow
 
 1. **OAuth Discovery** (if applicable)
    ```
@@ -170,9 +274,9 @@ if request_id is None:  # This is a notification
    }
    ```
 
-## Common Issues and Solutions
+### HTTP Mode Troubleshooting
 
-### Issue: "Protected resource does not match expected URL"
+#### Issue: "Protected resource does not match expected URL"
 
 **Solution**: Ensure your OAuth discovery endpoint returns the exact URL configured in `.mcp.json`:
 
@@ -185,7 +289,7 @@ async def oauth_protected_resource(request):
     }
 ```
 
-### Issue: Client doesn't proceed after initialization
+#### Issue: Client doesn't proceed after initialization
 
 **Possible causes**:
 1. Returning `null` instead of `{}` for empty capabilities
@@ -193,7 +297,7 @@ async def oauth_protected_resource(request):
 3. Not handling notifications correctly (must return 202)
 4. Hardcoding protocol version instead of echoing client's version
 
-### Issue: 404 on OAuth endpoints
+#### Issue: 404 on OAuth endpoints
 
 **Solution**: Add all necessary OAuth discovery endpoints:
 
@@ -203,7 +307,7 @@ app.get("/.well-known/oauth-authorization-server/messages")(oauth_discovery)
 app.get("/.well-known/oauth-protected-resource")(oauth_protected_resource)
 ```
 
-## Testing Your Server
+### Testing Your HTTP Server
 
 Use this test script to verify your server implementation:
 
@@ -255,14 +359,14 @@ if response.status_code == 200:
     print(f"Found {len(tools)} tools")
 ```
 
-## Security Considerations
+### Security Considerations
 
 1. **Validate Origin headers** to prevent DNS rebinding attacks
 2. **Bind to localhost** when running locally
 3. **Implement proper authentication** for production use
 4. **Use HTTPS** for remote servers when possible
 
-## References
+### References
 
 - [MCP Streamable HTTP Transport Specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http)
 - [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)

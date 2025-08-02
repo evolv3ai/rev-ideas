@@ -17,10 +17,12 @@ COPY docker/requirements-gaea2.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create output directory with proper permissions
-RUN mkdir -p /output/gaea2 && chmod -R 777 /output
+RUN mkdir -p /output/gaea2 && chmod -R 755 /output
 
 # Copy MCP server code
 COPY tools/mcp /app/tools/mcp
+
+# No entrypoint script needed - containers run as host user
 
 # Set Python path
 ENV PYTHONPATH=/app
@@ -31,6 +33,8 @@ RUN echo "Note: This container provides Gaea2 project creation and validation on
 
 # Expose port
 EXPOSE 8007
+
+# Run as host user via docker-compose - no entrypoint needed
 
 # Run the server
 CMD ["python", "-m", "tools.mcp.gaea2.server", "--mode", "http"]
