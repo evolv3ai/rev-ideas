@@ -407,6 +407,41 @@ The repository includes comprehensive CI/CD workflows:
 
 This prevents accidentally notifying random GitHub users who happen to share names with our AI tools.
 
+### PR Comments and Reactions
+
+**Use Custom Reaction Images**: When commenting on PRs and issues, prefer using our custom reaction images over standard emojis for a more unique and engaging experience.
+
+- **Available reactions** are defined in: https://raw.githubusercontent.com/AndrewAltimit/Media/refs/heads/main/reaction/config.yaml
+- **Format**: `![Reaction](https://raw.githubusercontent.com/AndrewAltimit/Media/refs/heads/main/reaction/[filename])`
+- **When to use**: Add reactions sparingly where they enhance communication:
+  - After successfully completing tasks (teamwork.webp, felix.webp)
+  - When actively working on something (miku_typing.webp, konata_typing.webp, yuki_typing.webp)
+  - When agreeing with feedback (youre_absolutely_right.webp)
+  - When something needs clarification (confused.gif)
+- **Best practices**:
+  - Don't overuse reactions - one per comment is usually enough
+  - Place reactions at natural break points in your comment
+  - Use them to add personality without distracting from the content
+  - Fetch the latest config when needed as new reactions may be added
+
+Example usage:
+```markdown
+Thanks for the review! Working on the fixes now.
+
+![Reaction](https://raw.githubusercontent.com/AndrewAltimit/Media/refs/heads/main/reaction/miku_typing.webp)
+```
+
+**Technical Note for gh CLI**: When posting comments with reaction images via `gh pr comment`:
+1. **Use the Write tool** to create a temporary markdown file (avoids shell escaping)
+2. Then use `gh pr comment --body-file /tmp/filename.md`
+3. **Avoid**: Direct `--body` flag, heredocs, or echo/printf - these will escape the `!` in `![Reaction]`
+
+Example:
+```bash
+# First: Use Write tool to create /tmp/comment.md with your content including images
+# Then: gh pr comment 47 --body-file /tmp/comment.md
+```
+
 ## Additional Documentation
 
 For detailed information on specific topics, refer to these documentation files:
