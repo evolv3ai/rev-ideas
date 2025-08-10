@@ -1,10 +1,17 @@
 """Code Quality MCP Server - Format checking and linting tools"""
 
 import subprocess
-from typing import Any, Dict, List, Optional  # noqa: F401
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from ..core.base_server import BaseMCPServer
-from ..core.utils import setup_logging
+# Add tools directory to path to import shared module
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+
+from tools.utilities.markdown_link_checker import MarkdownLinkChecker  # noqa: E402
+
+from ..core.base_server import BaseMCPServer  # noqa: E402
+from ..core.utils import setup_logging  # noqa: E402
 
 
 class CodeQualityMCPServer(BaseMCPServer):
@@ -17,6 +24,7 @@ class CodeQualityMCPServer(BaseMCPServer):
             port=8010,  # New port for code quality server
         )
         self.logger = setup_logging("CodeQualityMCP")
+        self.link_checker = MarkdownLinkChecker()
 
     def get_tools(self) -> Dict[str, Dict[str, Any]]:
         """Return available code quality tools"""
@@ -89,6 +97,40 @@ class CodeQualityMCPServer(BaseMCPServer):
                             ],
                             "default": "python",
                             "description": "Programming language",
+                        },
+                    },
+                    "required": ["path"],
+                },
+            },
+            "check_markdown_links": {
+                "description": "Check links in markdown files for validity",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path to markdown file or directory",
+                        },
+                        "check_external": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "Check external HTTP/HTTPS links",
+                        },
+                        "ignore_patterns": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "default": [],
+                            "description": "Regex patterns for URLs to ignore",
+                        },
+                        "timeout": {
+                            "type": "integer",
+                            "default": 10,
+                            "description": "Timeout for HTTP requests in seconds",
+                        },
+                        "concurrent_checks": {
+                            "type": "integer",
+                            "default": 10,
+                            "description": "Maximum number of concurrent link checks",
                         },
                     },
                     "required": ["path"],
@@ -246,6 +288,35 @@ class CodeQualityMCPServer(BaseMCPServer):
         except Exception as e:
             self.logger.error(f"Auto-format error: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    async def check_markdown_links(
+        self,
+        path: str,
+        check_external: bool = True,
+        ignore_patterns: Optional[List[str]] = None,
+        timeout: int = 10,
+        concurrent_checks: int = 10,
+    ) -> Dict[str, Any]:
+        """Check links in markdown files for validity using shared module
+
+        Args:
+            path: Path to markdown file or directory
+            check_external: Whether to check external HTTP/HTTPS links
+            ignore_patterns: List of regex patterns for URLs to ignore
+            timeout: Timeout for HTTP requests in seconds
+            concurrent_checks: Maximum number of concurrent link checks
+
+        Returns:
+            Dictionary with link checking results
+        """
+        result = await self.link_checker.check_markdown_links(
+            path=path,
+            check_external=check_external,
+            ignore_patterns=ignore_patterns,
+            timeout=timeout,
+            concurrent_checks=concurrent_checks,
+        )
+        return result  # type: ignore[no-any-return]
 
 
 def main():

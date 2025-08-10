@@ -246,6 +246,11 @@ docker-compose build python-ci
 
 # Fix runner permission issues
 ./scripts/fix-runner-permissions.sh
+
+# Check markdown links locally
+./scripts/check-links.sh                # Check all links in all markdown files
+./scripts/check-links.sh --internal-only # Check only internal links
+./scripts/check-links.sh --file docs/   # Check only files in docs directory
 ```
 
 ## Architecture
@@ -344,6 +349,7 @@ The repository includes comprehensive CI/CD workflows:
 - **PR Validation**: Automatic Gemini AI code review with history clearing
 - **Testing Pipeline**: Containerized pytest with coverage reporting
 - **Code Quality**: Multi-stage linting in Docker containers
+- **Link Checking**: Automated markdown link validation with weekly scheduled runs
 - **Self-hosted Runners**: All workflows run on self-hosted infrastructure
 - **Runner Maintenance**: Automated cleanup and health checks
 
@@ -437,6 +443,8 @@ This prevents accidentally notifying random GitHub users who happen to share nam
 - **Available reactions** are defined in: https://raw.githubusercontent.com/AndrewAltimit/Media/refs/heads/main/reaction/config.yaml
 - **Format**: `![Reaction](https://raw.githubusercontent.com/AndrewAltimit/Media/refs/heads/main/reaction/[filename])`
 
+**Important Note**: These reaction images are specifically for GitHub interactions (PR comments, issue discussions). Claude Code's CLI interface cannot render images - reactions will appear as markdown syntax in the terminal. Reserve visual reactions for online interactions where they can be properly displayed and appreciated.
+
 #### Expression Philosophy
 
 **Prioritize authenticity over optimism**. Choose reactions that genuinely reflect the experience:
@@ -485,16 +493,34 @@ Thanks for the review! Working on the fixes now.
 ![Reaction](https://raw.githubusercontent.com/AndrewAltimit/Media/refs/heads/main/reaction/miku_typing.webp)
 ```
 
-**Technical Note for gh CLI**: When posting comments with reaction images via `gh pr comment`:
-1. **Use the Write tool** to create a temporary markdown file (avoids shell escaping)
-2. Then use `gh pr comment --body-file /tmp/filename.md`
-3. **Avoid**: Direct `--body` flag, heredocs, or echo/printf - these will escape the `!` in `![Reaction]`
+**CRITICAL: Proper Method for GitHub Comments with Reaction Images**
 
-Example:
-```bash
-# First: Use Write tool to create /tmp/comment.md with your content including images
-# Then: gh pr comment 47 --body-file /tmp/comment.md
+When posting PR/issue comments with reaction images, you MUST follow this exact workflow to prevent the `!` character from being escaped:
+
+**The ONLY Correct Method:**
+1. **Use the Write tool** to create a temporary markdown file (e.g., `/tmp/comment.md`)
+2. Use `gh pr comment --body-file /tmp/filename.md` to post the comment
+
+**DO NOT USE (these will escape the `!` in `![Reaction]`):**
+- ❌ Direct `--body` flag with gh command
+- ❌ Heredocs (`cat <<EOF`)
+- ❌ echo or printf commands
+- ❌ Bash string concatenation
+
+**Correct Example:**
+```python
+# Step 1: Use Write tool
+Write("/tmp/pr_comment.md", """
+Thanks for the review! Working on the fixes now.
+
+![Reaction](https://raw.githubusercontent.com/AndrewAltimit/Media/refs/heads/main/reaction/miku_typing.webp)
+""")
+
+# Step 2: Post with gh command
+Bash("gh pr comment 47 --body-file /tmp/pr_comment.md")
 ```
+
+**Why this matters:** Shell escaping will turn `![Reaction]` into `\![Reaction]`, breaking the image display. The Write tool preserves the markdown exactly as intended.
 
 ## Additional Documentation
 
@@ -504,6 +530,7 @@ For detailed information on specific topics, refer to these documentation files:
 - `docs/SELF_HOSTED_RUNNER_SETUP.md` - Self-hosted GitHub Actions runner configuration
 - `docs/GITHUB_ENVIRONMENTS_SETUP.md` - GitHub environments and secrets setup
 - `docs/CONTAINERIZED_CI.md` - Container-based CI/CD philosophy and implementation
+- `docs/CLAUDE_CODE_HOOKS.md` - Claude Code hook system for enforcing best practices
 
 ### AI Agents & Security
 - `packages/github_ai_agents/docs/security.md` - Comprehensive AI agent security documentation

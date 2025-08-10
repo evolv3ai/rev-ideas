@@ -4,7 +4,7 @@ This repository contains a modular collection of MCP servers that provide variou
 
 ## Available MCP Servers
 
-### 1. Code Quality MCP Server (Port 8010)
+### 1. Code Quality MCP Server (STDIO mode)
 **Location**: `tools/mcp/code_quality/`
 **Documentation**: [Code Quality MCP Documentation](../../tools/mcp/code_quality/docs/README.md)
 
@@ -13,25 +13,27 @@ Provides code formatting and linting tools for multiple languages:
 - Linting with various tools (flake8, pylint, eslint, etc.)
 - Auto-formatting capabilities
 
-### 2. Content Creation MCP Server (Port 8011)
+### 2. Content Creation MCP Server (STDIO mode)
 **Location**: `tools/mcp/content_creation/`
 **Documentation**: [Content Creation MCP Documentation](../../tools/mcp/content_creation/docs/README.md)
 
 Tools for creating mathematical animations and documents:
 - Manim animations (mathematical visualizations)
-- LaTeX document compilation (PDF, DVI, PS)
+- LaTeX document compilation (PDF, DVI, PS) with visual feedback
 - TikZ diagram rendering
+- Preview generation and compression
 
-### 3. Gemini AI Integration MCP Server (Port 8006)
+### 3. Gemini AI Integration MCP Server (STDIO mode)
 **Location**: `tools/mcp/gemini/`
 **Documentation**: [Gemini MCP Documentation](../../tools/mcp/gemini/docs/README.md)
 
 AI integration for second opinions and code validation:
-- Gemini AI consultations
+- Gemini AI consultations with comparison mode
 - Conversation history management
 - Auto-consultation on uncertainty detection
+- Integration status and statistics
 
-**⚠️ Important**: Must run on host system (not in container)
+**⚠️ Important**: Must run on host system (not in container) due to Docker access requirements
 
 ### 4. Gaea2 Terrain Generation MCP Server (Port 8007)
 **Location**: `tools/mcp/gaea2/`
@@ -40,9 +42,72 @@ AI integration for second opinions and code validation:
 Comprehensive terrain generation with Gaea2:
 - Support for all 185 Gaea2 nodes
 - Intelligent validation and error correction
-- Professional terrain templates
+- Professional terrain templates (11 templates)
 - CLI automation (Windows only)
-- Project repair capabilities
+- Project repair and optimization capabilities
+- Pattern-based workflow analysis
+
+### 5. AI Toolkit MCP Server (Port 8012)
+**Location**: `tools/mcp/ai_toolkit/`
+**Documentation**: [AI Toolkit MCP Documentation](../../tools/mcp/ai_toolkit/docs/README.md)
+
+Bridge to remote AI Toolkit for LoRA training:
+- Training configuration management
+- Dataset upload with chunked support
+- Training job monitoring and control
+- Model export and download
+- System statistics and logs
+
+**Remote Bridge**: Connects to AI Toolkit at `192.168.0.152:8012`
+
+### 6. ComfyUI MCP Server (Port 8013)
+**Location**: `tools/mcp/comfyui/`
+**Documentation**: [ComfyUI MCP Documentation](../../tools/mcp/comfyui/docs/README.md)
+
+Bridge to remote ComfyUI for AI image generation:
+- Image generation with workflows
+- LoRA model management and transfer
+- Custom workflow execution
+- Model listing and management
+
+**Remote Bridge**: Connects to ComfyUI at `192.168.0.152:8013`
+
+### 7. OpenCode MCP Server (STDIO mode)
+**Location**: `tools/mcp/opencode/`
+**Documentation**: [OpenCode MCP Documentation](../../tools/mcp/opencode/README.md)
+
+AI-powered code generation using OpenRouter:
+- Code generation, refactoring, and review
+- Code explanation and documentation
+- Conversation history management
+- Auto-consultation features
+- Uses Qwen 2.5 Coder model
+
+**Modes**: Supports both STDIO (local) and HTTP (remote) modes
+
+### 8. Crush MCP Server (STDIO mode)
+**Location**: `tools/mcp/crush/`
+**Documentation**: [Crush MCP Documentation](../../tools/mcp/crush/README.md)
+
+Fast code generation using OpenRouter:
+- Quick code generation and conversion
+- Optimized for speed with smaller models
+- Conversation history management
+- Auto-consultation features
+
+**Modes**: Supports both STDIO (local) and HTTP (remote) modes
+
+### 9. Meme Generator MCP Server (STDIO mode)
+**Location**: `tools/mcp/meme_generator/`
+**Documentation**: [Meme Generator MCP Documentation](../../tools/mcp/meme_generator/docs/README.md)
+
+Generate memes with customizable text overlays:
+- Template-based meme generation
+- Auto-resize text to fit areas
+- Visual feedback for AI verification
+- Automatic upload for sharing (0x0.st)
+- Cultural context documentation
+- 7+ built-in templates with more being added
 
 ## Configuration and Transport
 
@@ -74,12 +139,18 @@ tools/mcp/
 ├── core/                    # Shared utilities and base classes
 │   ├── base_server.py      # Base MCP server class
 │   ├── http_bridge.py      # HTTP bridge for remote servers
+│   ├── client_registry.py  # Client registry management
 │   └── utils.py            # Common utilities
 │
-├── code_quality/           # Code quality tools
-├── content_creation/       # Manim & LaTeX tools
-├── gemini/                 # AI integration
-└── gaea2/                  # Terrain generation
+├── code_quality/           # Code quality tools (STDIO)
+├── content_creation/       # Manim & LaTeX tools (STDIO)
+├── gemini/                 # AI integration (STDIO, host-only)
+├── gaea2/                  # Terrain generation (HTTP bridge, port 8007)
+├── ai_toolkit/             # LoRA training (HTTP bridge, port 8012)
+├── comfyui/                # Image generation (HTTP bridge, port 8013)
+├── opencode/               # AI code generation (STDIO)
+├── crush/                  # Fast code generation (STDIO)
+└── meme_generator/         # Meme creation (STDIO)
 ```
 
 ## Running MCP Servers
@@ -120,10 +191,24 @@ Add the desired servers to your Claude Desktop configuration:
     "gaea2": {
       "command": "python",
       "args": ["-m", "tools.mcp.gaea2.server", "--mode", "stdio"]
+    },
+    "opencode": {
+      "command": "python",
+      "args": ["-m", "tools.mcp.opencode.server", "--mode", "stdio"]
+    },
+    "crush": {
+      "command": "python",
+      "args": ["-m", "tools.mcp.crush.server", "--mode", "stdio"]
+    },
+    "meme-generator": {
+      "command": "python",
+      "args": ["-m", "tools.mcp.meme_generator.server", "--mode", "stdio"]
     }
   }
 }
 ```
+
+**Note**: AI Toolkit and ComfyUI servers are bridges to remote services and typically run in HTTP mode.
 
 ## Docker Support
 
@@ -151,8 +236,34 @@ services:
     volumes:
       - ./output:/app/output
 
-  # Note: Gemini must run on host
+  mcp-gaea2:
+    build:
+      context: .
+      dockerfile: docker/mcp-gaea2.Dockerfile
+    ports:
+      - "8007:8007"
+    environment:
+      - GAEA2_REMOTE_URL=${GAEA2_REMOTE_URL:-http://localhost:8007}
+
+  mcp-meme-generator:
+    build:
+      context: .
+      dockerfile: docker/mcp-meme.Dockerfile
+    volumes:
+      - ./output:/app/output
+    # Runs in STDIO mode - no ports exposed
+
+  # OpenRouter-based agents container
+  openrouter-agents:
+    build:
+      context: .
+      dockerfile: docker/openrouter-agents.Dockerfile
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+
+  # Note: Gemini must run on host (Docker access required)
   # Note: Gaea2 CLI features require Windows host
+  # Note: AI Toolkit and ComfyUI are bridges to remote services
 ```
 
 ## Development
@@ -181,16 +292,33 @@ python scripts/mcp/test_all_servers.py
 
 ## Common Issues
 
-### Port Conflicts
-Each server uses a different port:
+### Server Modes and Ports
+
+**STDIO Mode (Default - no ports exposed):**
+- Code Quality (via Docker Compose)
+- Content Creation (via Docker Compose)
+- Gemini (host-only, requires Docker access)
+- OpenCode (via Docker Compose)
+- Crush (via Docker Compose)
+- Meme Generator (via Docker Compose)
+
+**HTTP Bridge Mode (Remote servers):**
+- Gaea2: 8007 (remote at 192.168.0.152)
+- AI Toolkit: 8012 (remote at 192.168.0.152)
+- ComfyUI: 8013 (remote at 192.168.0.152)
+
+**Development Ports (when running servers in HTTP mode):**
 - Code Quality: 8010
 - Content Creation: 8011
 - Gemini: 8006
-- Gaea2: 8007
+- OpenCode: 8014
+- Crush: 8015
 
 ### Container Restrictions
 - **Gemini**: Cannot run in container (needs Docker access)
 - **Gaea2 CLI**: Requires Windows host with Gaea2 installed
+- **AI Toolkit/ComfyUI**: Bridges to remote services, require network access
+- **OpenCode/Crush**: Can run in STDIO mode locally or HTTP mode in containers
 
 ### Missing Dependencies
 Each server has specific requirements. Check the server's documentation for installation instructions.
