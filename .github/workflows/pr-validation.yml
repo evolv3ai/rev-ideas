@@ -396,6 +396,8 @@ jobs:
           lfs: true
 
       - name: Run tests
+        env:
+          MCP_GAEA2_URL: http://192.168.0.152:8007
         run: |
           echo "🧪 Running test suite..."
           ./scripts/run-ci.sh test

@@ -43,6 +43,13 @@ jobs:
           ref: ${{ github.head_ref }}
           lfs: true
 
+      - name: Post-checkout cleanup
+        run: |
+          # Run cleanup script if it exists
+          if [ -f "./scripts/fix-runner-permissions.sh" ]; then
+            ./scripts/fix-runner-permissions.sh --minimal
+          fi
+
       # Docker CI image will be built automatically by run-ci.sh script
 
       - name: Run linting stage

@@ -62,6 +62,8 @@ jobs:
           lfs: true
 
       - name: Run tests
+        env:
+          MCP_GAEA2_URL: http://192.168.0.152:8007
         run: |
           echo "🧪 Running test suite..."
           ./scripts/run-ci.sh test --cov-report=html --timeout=300 --junitxml=test-results.xml
@@ -78,7 +80,7 @@ jobs:
           retention-days: 30
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
           flags: unittests
