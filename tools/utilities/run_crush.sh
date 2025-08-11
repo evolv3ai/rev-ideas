@@ -22,6 +22,9 @@ fi
 
 echo "✅ Using OpenRouter API key: ****${OPENROUTER_API_KEY: -4}"
 
+# Security hooks are now automatically loaded via /etc/bash.bashrc
+# No need to source them manually anymore
+
 # Check if crush CLI is available
 if ! command -v crush &> /dev/null; then
     echo "⚠️  crush CLI not found. Installing..."

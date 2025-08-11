@@ -28,6 +28,9 @@ nvm use 22.16.0
 NODE_VERSION=$(node --version)
 echo "✅ Using Node.js: $NODE_VERSION"
 
+# Security hooks are now automatically loaded via /etc/bash.bashrc
+# No need to source them manually anymore
+
 # Ask about unattended mode
 echo "🤖 Claude Code Configuration"
 echo ""

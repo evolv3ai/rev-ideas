@@ -22,6 +22,9 @@ fi
 
 echo "✅ Using OpenRouter API key: ****${OPENROUTER_API_KEY: -4}"
 
+# Security hooks are now automatically loaded via /etc/bash.bashrc
+# No need to source them manually anymore
+
 # Default model if not set
 if [ -z "$OPENCODE_MODEL" ]; then
     export OPENCODE_MODEL="qwen/qwen-2.5-coder-32b-instruct"

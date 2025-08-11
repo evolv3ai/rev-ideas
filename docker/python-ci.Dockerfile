@@ -45,5 +45,10 @@ ENV PYTHONUNBUFFERED=1 \
 # Create a non-root user that will be overridden by docker-compose
 RUN useradd -m -u 1000 ciuser
 
+# Copy security hooks and set up universal gh alias
+COPY scripts/security-hooks /app/security-hooks
+RUN chmod +x /app/security-hooks/*.sh && \
+    echo 'alias gh="/app/security-hooks/gh-wrapper.sh"' >> /etc/bash.bashrc
+
 # Default command
 CMD ["bash"]
