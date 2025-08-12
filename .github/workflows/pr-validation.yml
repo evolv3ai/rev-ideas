@@ -201,7 +201,7 @@ jobs:
           nvm use 22.16.0
 
           # Run the Gemini review script
-          python3 scripts/gemini-pr-review.py
+          python3 automation/review/gemini-pr-review.py
 
       - name: Upload review artifact
         if: always()
@@ -289,8 +289,8 @@ jobs:
       - name: Validate YAML and JSON files
         run: |
           echo "🔍 Validating configuration files..."
-          ./scripts/run-ci.sh yaml-lint
-          ./scripts/run-ci.sh json-lint
+          ./automation/ci-cd/run-ci.sh yaml-lint
+          ./automation/ci-cd/run-ci.sh json-lint
 
   # Stage 4b: Workflow file validation (always run)
   workflow-validation:
@@ -371,7 +371,7 @@ jobs:
       - name: Run YAML lint on all files
         run: |
           echo "🔍 Running comprehensive YAML linting..."
-          ./scripts/run-ci.sh yaml-lint
+          ./automation/ci-cd/run-ci.sh yaml-lint
 
   # Stage 5: Test execution
   test-suite:
@@ -400,7 +400,7 @@ jobs:
           MCP_GAEA2_URL: http://192.168.0.152:8007
         run: |
           echo "🧪 Running test suite..."
-          ./scripts/run-ci.sh test
+          ./automation/ci-cd/run-ci.sh test
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
@@ -457,7 +457,7 @@ jobs:
       # Set Docker user environment variables
       - name: Set Docker user environment
         run: |
-          source ./scripts/set-docker-user.sh
+          source ./automation/setup/docker/set-docker-user.sh
 
       # No need to install Python or dependencies - Docker handles it
 
@@ -517,7 +517,7 @@ jobs:
           done
 
           # Run comprehensive tests
-          docker-compose run --rm python-ci python scripts/mcp/test_all_servers.py --quick
+          docker-compose run --rm python-ci python automation/testing/test_all_servers.py --quick
 
       - name: View MCP server logs
         if: failure()
@@ -530,7 +530,7 @@ jobs:
         run: |
           docker-compose down
           # Clean up output directories using Docker to handle permissions
-          ./scripts/cleanup-outputs.sh
+          ./automation/ci-cd/cleanup-outputs.sh
 
   # Stage 7: Gaea2 MCP Integration Tests
   gaea2-integration-tests:
@@ -649,7 +649,7 @@ jobs:
         run: |
           docker-compose down
           # Clean up output directories using Docker to handle permissions
-          ./scripts/cleanup-outputs.sh
+          ./automation/ci-cd/cleanup-outputs.sh
 
   # Final status and summary
   pr-status:

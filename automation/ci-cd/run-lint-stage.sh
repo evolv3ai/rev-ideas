@@ -4,6 +4,13 @@
 
 set -e
 
+# Get the script's directory to find the project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Change to project root so relative paths in docker-compose.yml work correctly
+cd "$PROJECT_ROOT"
+
 STAGE=${1:-format}
 
 # Export user IDs for docker-compose
@@ -226,7 +233,7 @@ case "$STAGE" in
     # Run the container with link checker
     # Default to internal-only for PR checks (faster)
     eval "${DOCKER_CMD} mcp-code-quality:latest \
-      python /workspace/scripts/check-markdown-links.py \
+      python /workspace/automation/analysis/check-markdown-links.py \
         /workspace \
         --format github \
         --output /workspace/link_check_summary.md \
