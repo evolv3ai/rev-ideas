@@ -37,7 +37,7 @@ AI integration for second opinions and code validation:
 
 ### 4. Gaea2 Terrain Generation MCP Server (Port 8007)
 **Location**: `tools/mcp/gaea2/`
-**Documentation**: [Gaea2 MCP Documentation](../gaea2/README.md) | [Full Documentation Index](../gaea2/INDEX.md)
+**Documentation**: [Gaea2 MCP Documentation](../../tools/mcp/gaea2/docs/README.md) | [Full Documentation Index](../../tools/mcp/gaea2/docs/INDEX.md)
 
 Comprehensive terrain generation with Gaea2:
 - Support for all 185 Gaea2 nodes
@@ -114,7 +114,7 @@ Generate memes with customizable text overlays:
 ### HTTP Streamable Transport
 
 MCP servers can use HTTP transport for remote deployment. For detailed configuration and troubleshooting:
-- **[MCP Server Modes: STDIO vs HTTP](STDIO_VS_HTTP_MODES.md)** - Complete guide for MCP server modes and HTTP implementation
+- **[MCP Server Modes: STDIO vs HTTP](architecture/stdio-vs-http.md)** - Complete guide for MCP server modes and HTTP implementation
 - **[MCP Specification](https://modelcontextprotocol.io/specification/2025-06-18)** - Official protocol specification
 
 ### Configuration File (.mcp.json)
