@@ -9,13 +9,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import asyncio  # noqa: E402
 import logging  # noqa: E402
+import os  # noqa: E402
 import uuid  # noqa: E402
-from typing import Any, Dict  # noqa: E402
+from typing import Any, Dict, Optional  # noqa: E402
 
 from blender.core.asset_manager import AssetManager  # noqa: E402
 from blender.core.blender_executor import BlenderExecutor  # noqa: E402
 from blender.core.job_manager import JobManager  # noqa: E402
 from blender.core.templates import TemplateManager  # noqa: E402
+from blender.tools import get_all_tool_definitions, get_tool_handlers  # noqa: E402
 from core.base_server import BaseMCPServer, ToolRequest, ToolResponse  # noqa: E402
 
 # Configure logging
@@ -26,11 +28,16 @@ logger = logging.getLogger(__name__)
 class BlenderMCPServer(BaseMCPServer):
     """MCP server for Blender operations."""
 
-    def __init__(self, base_dir: str = "/app", port: int = 8017):
+    def __init__(self, base_dir: Optional[str] = None, port: int = 8017):
         super().__init__(name="blender-mcp", version="1.0.0", port=port)
         self.description = "Blender 3D content creation and rendering"
 
         # Set up paths
+        if base_dir is None:
+            # Use temp directory if no base_dir specified
+            import tempfile
+
+            base_dir = os.path.join(tempfile.gettempdir(), "blender-mcp")
         self.base_dir = Path(base_dir)
         self.projects_dir = self.base_dir / "projects"
         self.assets_dir = self.base_dir / "assets"
@@ -84,14 +91,17 @@ class BlenderMCPServer(BaseMCPServer):
         """
         # Reject empty paths
         if not user_path:
+            logger.warning(f"Empty path provided for {path_type}")
             raise ValueError(f"Invalid {path_type} path: empty path")
 
         # Reject absolute paths
         if Path(user_path).is_absolute():
+            logger.warning(f"Absolute path attempt blocked for {path_type}. Path: '{user_path}'")
             raise ValueError(f"Invalid {path_type} path: absolute paths not allowed")
 
         # Reject paths with parent directory references
         if ".." in user_path:
+            logger.warning(f"Path traversal attempt blocked for {path_type}. Path contains '..': '{user_path}'")
             raise ValueError(f"Invalid {path_type} path: parent directory references not allowed")
 
         # Reject single dot (current directory)
@@ -118,15 +128,42 @@ class BlenderMCPServer(BaseMCPServer):
         try:
             safe_path.relative_to(base_dir.resolve())
         except ValueError:
+            logger.warning(
+                f"Path traversal attempt blocked for {path_type}. Path: '{user_path}' resolved outside base_dir: '{base_dir}'"
+            )
             raise ValueError(f"Invalid {path_type} path: traversal attempt detected")
 
         return safe_path
 
     def _validate_project_path(self, project_path: str) -> Path:
-        """Validate a project file path."""
+        """Validate a project file path with secure path traversal prevention."""
         # Handle both full paths and just project names
         # Look for projects in projects directory
 
+        # If it's already a full container path, validate it securely
+        if project_path.startswith(str(self.projects_dir)):
+            # Use resolve() to canonicalize the path and handle any .. components
+            try:
+                path = Path(project_path).resolve()
+                # Ensure the resolved path is actually within projects_dir
+                projects_dir_resolved = self.projects_dir.resolve()
+                # Check if projects_dir is in the path's parents or if it's the exact dir
+                if projects_dir_resolved in path.parents or path.parent == projects_dir_resolved:
+                    if path.exists() or path.parent == projects_dir_resolved:
+                        return path
+                    raise ValueError(f"Project not found: {project_path}")
+                else:
+                    # Log security event before raising
+                    logger.warning(f"Potential path traversal attempt blocked. Path: '{project_path}'. Resolved to: '{path}'")
+                    raise ValueError(f"Path traversal attempt detected: {project_path}")
+            except ValueError:
+                # Re-raise ValueError as-is (including path traversal)
+                raise
+            except Exception as e:
+                logger.warning(f"Invalid project path attempted: '{project_path}'. Error: {e}")
+                raise ValueError(f"Invalid project path: {e}")
+
+        # Otherwise treat it as a relative path
         if project_path.endswith(".blend"):
             return self._validate_path(project_path, self.projects_dir, "project")
         else:
@@ -168,7 +205,7 @@ class BlenderMCPServer(BaseMCPServer):
                                 "fps": {"type": "integer", "default": 24},
                                 "engine": {
                                     "type": "string",
-                                    "enum": ["CYCLES", "EEVEE", "WORKBENCH"],
+                                    "enum": ["CYCLES", "BLENDER_EEVEE", "BLENDER_WORKBENCH"],
                                     "default": "CYCLES",
                                 },
                             },
@@ -336,7 +373,7 @@ class BlenderMCPServer(BaseMCPServer):
                                 "samples": {"type": "integer", "default": 128},
                                 "engine": {
                                     "type": "string",
-                                    "enum": ["CYCLES", "EEVEE"],
+                                    "enum": ["CYCLES", "BLENDER_EEVEE"],
                                     "default": "CYCLES",
                                 },
                                 "format": {
@@ -373,8 +410,8 @@ class BlenderMCPServer(BaseMCPServer):
                                 "samples": {"type": "integer", "default": 64},
                                 "engine": {
                                     "type": "string",
-                                    "enum": ["CYCLES", "EEVEE"],
-                                    "default": "EEVEE",
+                                    "enum": ["CYCLES", "BLENDER_EEVEE"],
+                                    "default": "BLENDER_EEVEE",
                                 },
                                 "format": {
                                     "type": "string",
@@ -608,6 +645,9 @@ class BlenderMCPServer(BaseMCPServer):
             },
         ]
 
+        # Add enhanced tools from modular tool definitions
+        tools.extend(get_all_tool_definitions())
+
         # Convert list to dictionary format expected by base class
         tool_dict = {}
         for tool in tools:
@@ -616,7 +656,7 @@ class BlenderMCPServer(BaseMCPServer):
                 "parameters": tool["inputSchema"],  # Base class expects 'parameters'
             }
 
-        return tool_dict
+        return tool_dict  # type: ignore
 
     async def execute_tool(self, request: ToolRequest):
         """Execute a tool with given arguments."""
@@ -648,6 +688,16 @@ class BlenderMCPServer(BaseMCPServer):
             "export_scene": self._export_scene,
         }
 
+        # Merge with modular tool handlers
+        modular_handlers = get_tool_handlers()
+        # Convert modular handlers to use self as first argument
+        for tool_name, handler_func in modular_handlers.items():
+            # Create a proper closure for each handler
+            def make_handler(func):
+                return lambda args: func(self, args)
+
+            tool_handlers[tool_name] = make_handler(handler_func)
+
         try:
             name = request.tool
             handler = tool_handlers.get(name)
@@ -657,7 +707,7 @@ class BlenderMCPServer(BaseMCPServer):
 
             # Execute the handler
             if name == "list_projects":
-                result = await handler(None)  # No arguments needed
+                result = await handler({})  # No arguments needed
             else:
                 arguments = request.get_args()
                 result = await handler(arguments)
@@ -716,7 +766,8 @@ class BlenderMCPServer(BaseMCPServer):
 
         return {
             "success": True,
-            "project_path": project_path,
+            "project_path": f"{project_name}.blend",  # Return relative path for subsequent use
+            "full_path": project_path,  # Also include full path if needed
             "job_id": job_id,
             "message": f"Project '{project_name}' created successfully",
         }
@@ -1064,6 +1115,8 @@ class BlenderMCPServer(BaseMCPServer):
             "format": export_format,
             "message": f"Scene exported to '{output_path}'",
         }
+
+    # All modular tool handlers are now imported from the tools package
 
 
 def main():

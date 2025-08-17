@@ -10,14 +10,15 @@ from typing import Any, Dict
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import asyncio  # noqa: E402
 
-from tools.mcp.core.client import MCPClient  # noqa: E402
+from tools.mcp.blender.tests.test_utils import TestClient  # noqa: E402
 
 
-class BlenderMCPClient(MCPClient):
-    """Specialized client for Blender MCP Server."""
+class BlenderMCPClient(TestClient):
+    """Specialized client for Blender MCP Server using shared test utilities."""
 
     def __init__(self, base_url: str = "http://localhost:8017"):
         """Initialize Blender MCP client.
@@ -26,8 +27,35 @@ class BlenderMCPClient(MCPClient):
             base_url: Base URL of the Blender MCP server
         """
         super().__init__(base_url)
-        self.projects = {}
-        self.jobs = {}
+        self.projects: Dict[str, str] = {}
+        self.jobs: Dict[str, Dict[str, Any]] = {}
+
+    async def health_check(self) -> Dict[str, Any]:  # type: ignore[override]
+        """Check server health asynchronously.
+
+        Returns:
+            Health check result
+        """
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{self.base_url}/health")
+            data: Dict[str, Any] = response.json()
+            return data
+
+    async def list_tools(self) -> list:  # type: ignore[override]
+        """List available tools asynchronously.
+
+        Returns:
+            List of available tools
+        """
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{self.base_url}/mcp/capabilities")
+            data = response.json()
+            tools = data.get("capabilities", {}).get("tools", {}).get("list", [])
+            return [{"name": tool} for tool in tools]
 
     async def create_project(self, name: str, template: str = "basic_scene", **settings) -> Dict[str, Any]:
         """Create a new Blender project.
@@ -91,7 +119,7 @@ class BlenderMCPClient(MCPClient):
 
         return result
 
-    async def wait_for_job(self, job_id: str, timeout: int = 300, poll_interval: int = 2) -> Dict[str, Any]:
+    async def wait_for_job(self, job_id: str, timeout: int = 300, poll_interval: float = 2) -> Dict[str, Any]:
         """Wait for a job to complete.
 
         Args:

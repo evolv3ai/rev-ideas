@@ -22,7 +22,7 @@ class JobManager:
         """
         self.jobs_dir = Path(jobs_dir)
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
-        self.jobs = {}  # In-memory job cache
+        self.jobs: Dict[str, Dict[str, Any]] = {}  # In-memory job cache
         self._lock = threading.Lock()
 
         # Load existing jobs from disk
@@ -119,7 +119,7 @@ class JobManager:
         with self._lock:
             # Check memory cache first
             if job_id in self.jobs:
-                return self.jobs[job_id].copy()
+                return dict(self.jobs[job_id])
 
             # Try loading from disk
             job = self._load_job(job_id)
@@ -252,15 +252,22 @@ class JobManager:
         job_file = self.jobs_dir / f"{job_id}.job"
         if job_file.exists():
             try:
-                return json.loads(job_file.read_text())
-            except Exception as e:
-                logger.error(f"Failed to load job {job_id}: {e}")
+                data = json.loads(job_file.read_text())
+                # Validate basic structure
+                if not isinstance(data, dict):
+                    raise TypeError(f"Job data is not a dictionary: {type(data)}")
+                return data  # type: ignore
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                logger.error(f"Failed to load or parse job {job_id}: {e}")
 
         # Also check for status file (from Blender process)
         status_file = self.jobs_dir / f"{job_id}.status"
         if status_file.exists():
             try:
                 status = json.loads(status_file.read_text())
+                # Validate status is a dictionary
+                if not isinstance(status, dict):
+                    raise TypeError(f"Status data is not a dictionary: {type(status)}")
                 # Create job from status
                 return {
                     "id": job_id,
@@ -272,8 +279,8 @@ class JobManager:
                     "created_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat(),
                 }
-            except Exception as e:
-                logger.error(f"Failed to load status for {job_id}: {e}")
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                logger.error(f"Failed to load or parse status for {job_id}: {e}")
 
         return None
 
