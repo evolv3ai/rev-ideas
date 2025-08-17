@@ -34,11 +34,18 @@ class BlenderMCPServer(BaseMCPServer):
 
         # Set up paths
         if base_dir is None:
-            # Use temp directory if no base_dir specified
-            import tempfile
+            # Use /app directory in container, or temp directory if not in container
+            if os.path.exists("/app"):
+                base_dir = "/app"
+            else:
+                import tempfile
 
-            base_dir = os.path.join(tempfile.gettempdir(), "blender-mcp")
+                base_dir = os.path.join(tempfile.gettempdir(), "blender-mcp")
         self.base_dir = Path(base_dir)
+
+        # Log the detected base directory for debugging
+        logger.info(f"Blender MCP Server initialized with base directory: {self.base_dir}")
+
         self.projects_dir = self.base_dir / "projects"
         self.assets_dir = self.base_dir / "assets"
         self.outputs_dir = self.base_dir / "outputs"
@@ -49,7 +56,25 @@ class BlenderMCPServer(BaseMCPServer):
         # Use the correct Blender path in container
         # Organize job files in outputs/jobs folder
         jobs_output_dir = self.outputs_dir / "jobs"
-        jobs_output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            jobs_output_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            # Log detailed permission information to help debug volume mount issues
+            try:
+                parent_dir_stat = self.outputs_dir.stat()
+                logger.warning(
+                    f"Cannot create {jobs_output_dir} due to a permission error: {e}. "
+                    f"Parent directory '{self.outputs_dir}' has permissions: {oct(parent_dir_stat.st_mode)}. "
+                    f"Owner UID: {parent_dir_stat.st_uid}, GID: {parent_dir_stat.st_gid}. "
+                    f"Falling back to using the parent directory for output."
+                )
+            except Exception as stat_error:
+                logger.warning(
+                    f"Cannot create {jobs_output_dir} due to a permission error: {e}. "
+                    f"Failed to stat parent directory: {stat_error}. "
+                    f"Falling back to using {self.outputs_dir} instead."
+                )
+            jobs_output_dir = self.outputs_dir
 
         self.blender_executor = BlenderExecutor(
             blender_path="/usr/local/bin/blender",
