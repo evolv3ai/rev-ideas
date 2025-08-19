@@ -1,17 +1,18 @@
-# OpenRouter Agents Image with Node.js and Go
+# OpenRouter Agents Image with Node.js
 # For agents that can be fully containerized (OpenCode, Crush)
+
+# Build arguments for source images (must be built first)
+ARG OPENCODE_IMAGE=template-repo-mcp-opencode:latest
+ARG CRUSH_IMAGE=template-repo-mcp-crush:latest
+
+# Build stages to copy binaries from the dedicated images
+FROM ${OPENCODE_IMAGE} AS opencode-source
+FROM ${CRUSH_IMAGE} AS crush-source
 
 # Use a base image that already has Node.js
 FROM node:20-slim
 
-# Define version arguments for better maintainability
-ARG GO_VERSION=1.24.5
-ARG GO_CHECKSUM_AMD64=10ad9e86233e74c0f6590fe5426895de6bf388964210eac34a6d83f38918ecdc
-ARG GO_CHECKSUM_ARM64=44e2d8b8e1b24a87dcab8c0bbf673cfcf92dc2ac0b3094df48b5c7fdb670cd5e
-ARG OPENCODE_VERSION=0.3.112
-ARG OPENCODE_CHECKSUM_AMD64=ce02926bbe94ca91c5a46e97565e3f8d275f1a6c2fd3352f7f99f558f6b60e09
-ARG OPENCODE_CHECKSUM_ARM64=6ceae43795a62b572866e50d30d99e266889b6aeae1da058aab34041cc5d49d8
-# Crush doesn't have stable releases yet, using latest
+# No need for version arguments - binaries come from the source images
 
 # Install Python 3.11 and all system dependencies in one layer
 RUN apt-get update && apt-get install -y \
@@ -22,8 +23,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     jq \
-    build-essential \
     unzip \
+    tar \
     && rm -rf /var/lib/apt/lists/*
 
 # Create symbolic links for Python
@@ -33,23 +34,6 @@ RUN ln -sf /usr/bin/python3.11 /usr/bin/python \
 # Use the existing node user (UID 1000) from the base image
 # This avoids UID conflicts and maintains consistency
 
-# Install Go in a separate layer (large download)
-# Checksum from https://go.dev/dl/
-# Support multiple architectures using Docker's built-in TARGETARCH variable
-ARG TARGETARCH=amd64
-RUN wget -q https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz && \
-    if [ "${TARGETARCH}" = "amd64" ]; then \
-        echo "${GO_CHECKSUM_AMD64}  go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" | sha256sum -c -; \
-    elif [ "${TARGETARCH}" = "arm64" ]; then \
-        echo "${GO_CHECKSUM_ARM64}  go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" | sha256sum -c -; \
-    fi && \
-    tar -C /usr/local -xzf go${GO_VERSION}.linux-${TARGETARCH}.tar.gz && \
-    rm go${GO_VERSION}.linux-${TARGETARCH}.tar.gz
-
-# Set Go environment variables
-ENV PATH="/usr/local/go/bin:/home/node/go/bin:${PATH}"
-ENV GOPATH="/home/node/go"
-
 # Install GitHub CLI (for agent operations) - using official method
 RUN wget -q -O- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /usr/share/keyrings/githubcli-archive-keyring.gpg > /dev/null \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -58,30 +42,13 @@ RUN wget -q -O- https://cli.github.com/packages/githubcli-archive-keyring.gpg | 
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Install OpenRouter-compatible CLI tools
+# Copy pre-built binaries from their respective images
+# This ensures single source of truth for installation logic
+COPY --from=opencode-source /usr/local/bin/opencode /usr/local/bin/opencode
+COPY --from=crush-source /usr/local/bin/crush /usr/local/bin/crush
 
-# Install OpenCode from GitHub releases
-# SECURITY: We verify checksums to ensure binary integrity
-# Checksums calculated on 2025-08-03 for v0.3.112 release
-RUN ARCH=$(dpkg --print-architecture) && \
-    if [ "$ARCH" = "amd64" ]; then \
-        ARCH="x64"; \
-        CHECKSUM="${OPENCODE_CHECKSUM_AMD64}"; \
-    elif [ "$ARCH" = "arm64" ]; then \
-        ARCH="arm64"; \
-        CHECKSUM="${OPENCODE_CHECKSUM_ARM64}"; \
-    fi && \
-    wget -q "https://github.com/sst/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${ARCH}.zip" -O /tmp/opencode.zip && \
-    echo "${CHECKSUM}  /tmp/opencode.zip" | sha256sum -c - && \
-    unzip -q /tmp/opencode.zip -d /usr/local/bin/ && \
-    rm /tmp/opencode.zip && \
-    chmod +x /usr/local/bin/opencode
-
-
-# Install Crush from Charm Bracelet - AI-powered shell
-# Crush is an AI-powered shell assistant from Charm Bracelet
-ENV GOBIN=/usr/local/bin
-RUN go install github.com/charmbracelet/crush@latest
+# Ensure binaries have correct permissions
+RUN chmod +x /usr/local/bin/opencode /usr/local/bin/crush
 
 # Create working directory
 WORKDIR /workspace
