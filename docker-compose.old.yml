@@ -1,0 +1,133 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14-alpine
+    container_name: already-dev-postgres
+    environment:
+      POSTGRES_DB: alreadydev
+      POSTGRES_USER: alreadydev
+      POSTGRES_PASSWORD: alreadydev_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - already-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alreadydev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:6-alpine
+    container_name: already-dev-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - already-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API Service
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: already-dev-backend
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/workspace/backend
+      - ./already-dev.prd.md:/workspace/already-dev.prd.md:ro
+      - ./AGENTS.md:/workspace/AGENTS.md:ro
+    environment:
+      DATABASE_URL: postgresql://alreadydev:alreadydev_secret@postgres:5432/alreadydev
+      REDIS_URL: redis://redis:6379
+      PYTHONUNBUFFERED: 1
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - already-network
+    restart: unless-stopped
+
+  # Celery Worker for Task Processing
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: already-dev-celery
+    command: celery -A tasks.celery worker --loglevel=info --concurrency=4
+    volumes:
+      - ./backend:/workspace/backend
+    environment:
+      DATABASE_URL: postgresql://alreadydev:alreadydev_secret@postgres:5432/alreadydev
+      REDIS_URL: redis://redis:6379
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - already-network
+    restart: unless-stopped
+
+  # Frontend Next.js Application
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: already-dev-frontend
+    command: npm run dev
+    working_dir: /workspace/frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/workspace/frontend
+      - /workspace/frontend/node_modules
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000
+      NODE_ENV: development
+    depends_on:
+      - backend
+    networks:
+      - already-network
+    restart: unless-stopped
+
+  # Flower for Celery Monitoring (Development)
+  flower:
+    image: mher/flower:latest
+    container_name: already-dev-flower
+    command: celery -A tasks.celery flower
+    ports:
+      - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      - redis
+      - celery
+    networks:
+      - already-network
+    profiles:
+      - dev
+
+networks:
+  already-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
