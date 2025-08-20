@@ -49,8 +49,8 @@ Seven AI agents working in harmony for development and automation. See [AI Agent
 
 2. **Clone and setup**
    ```bash
-   git clone https://github.com/AndrewAltimit/template-repo
-   cd template-repo
+   git clone https://github.com/evolv3ai/rev-ideas.git
+   cd rev-ideas
 
    # Install AI agents package (for CLI tools)
    pip3 install -e ./packages/github_ai_agents
